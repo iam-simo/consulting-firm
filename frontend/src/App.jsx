@@ -23,7 +23,7 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('https://consulting-backend-y19q.onrender.com', {
+      const res = await fetch('https://consulting-backend-y19q.onrender.com/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -32,7 +32,7 @@ function App() {
       alert("Transmission Received. Our architects will contact you.");
       setFormData({ name: '', email: '', message: '' });
     } catch (err) {
-      alert("Uplink Failure: Ensure backend is running.");
+      alert("Uplink in progress. The secure server is waking up—please try again in 30 seconds.");
     }
   };
 

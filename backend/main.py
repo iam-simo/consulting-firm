@@ -64,3 +64,7 @@ async def get_leads():
     leads = [dict(row) for row in rows]
     conn.close()
     return leads
+origins = [
+    "http://localhost:5173",
+    "https://consulting-firm-delta.vercel.app", 
+]

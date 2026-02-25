@@ -18,7 +18,7 @@ const handleDelete = async (id) => {
       });
       
       // Refresh the page data by calling the fetch again
-      const response = await fetch('https://consulting-backend-y19q.onrender.com');
+      const response = await fetch('https://consulting-backend-y19q.onrender.com/api/admin/leads');
       const data = await response.json();
       setLeads(data);
     } catch (err) {
