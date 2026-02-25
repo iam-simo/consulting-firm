@@ -13,12 +13,12 @@ function Admin() {
 const handleDelete = async (id) => {
   if (window.confirm("Archive this lead permanently?")) {
     try {
-      await fetch(`http://localhost:8000/api/admin/leads/${id}`, {
+      await fetch(`https://consulting-backend-y19q.onrender.com/${id}`, {
         method: 'DELETE',
       });
       
       // Refresh the page data by calling the fetch again
-      const response = await fetch('http://localhost:8000/api/admin/leads');
+      const response = await fetch('https://consulting-backend-y19q.onrender.com');
       const data = await response.json();
       setLeads(data);
     } catch (err) {
