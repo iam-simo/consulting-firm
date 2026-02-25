@@ -1,0 +1,6 @@
+node_modules/
+frontend/node_modules/
+backend/__pycache__/
+backend/consulting.db
+.env
+dist/
