@@ -66,5 +66,5 @@ async def get_leads():
     return leads
 origins = [
     "http://localhost:5173",
-    "https://consulting-firm-delta.vercel.app", 
+    "https://consulting-firm-delta.vercel.app",
 ]
