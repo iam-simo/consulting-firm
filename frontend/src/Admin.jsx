@@ -4,7 +4,7 @@ function Admin() {
   const [leads, setLeads] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/admin/leads')
+    fetch('https://consulting-backend-y19q.onrender.com/api/admin/leads')
       .then(res => res.json())
       .then(data => setLeads(data))
       .catch(err => console.error("Error fetching leads:", err));
