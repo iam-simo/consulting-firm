@@ -1,13 +1,13 @@
+# Final Deploy Feb 26
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # This allows EVERY site to connect, fixing the error instantly
+    allow_origins=["*"],  # This allows ANY site to connect, bypassing the security wall
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
