@@ -7,11 +7,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], # Matches your Vite port
+    allow_origins=["*"],  # This allows EVERY site to connect, fixing the error instantly
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Initialize Database
 def init_db():
     conn = sqlite3.connect("consulting.db")
