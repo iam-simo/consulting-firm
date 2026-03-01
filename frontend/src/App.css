@@ -5,6 +5,7 @@
   --neon-purple: #7000ff;
   --dark-bg: #050505;
   --glass-bg: rgba(255, 255, 255, 0.03);
+  --text-dim: #b0b0b0;
 }
 
 body {
@@ -20,16 +21,18 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   padding: 25px 8%; background: rgba(5, 5, 5, 0.9);
   backdrop-filter: blur(15px); position: sticky; top: 0; z-index: 1000;
-  border-bottom: 1px solid rgba(10, 116, 117, 0.1);
+  border-bottom: 1px solid rgba(0, 242, 255, 0.1);
 }
 
-.logo { font-size: 26px; font-weight: 700; cursor: pointer; }
+.logo { font-size: 26px; font-weight: 700; cursor: pointer; letter-spacing: 1px; }
 .glow { color: var(--neon-blue); text-shadow: 0 0 10px var(--neon-blue); }
 
 .nav-links button {
   background: none; border: none; color: white; margin-left: 30px;
-  cursor: pointer; transition: 0.3s; font-size: 16px;
+  cursor: pointer; transition: 0.3s; font-size: 16px; font-family: inherit;
 }
+
+.nav-links button:hover { color: var(--neon-blue); }
 
 .nav-cta {
   background: var(--neon-blue) !important; color: black !important;
@@ -38,8 +41,8 @@ body {
 
 /* --- HERO SECTION --- */
 .hero {
-  height: 90vh; display: flex; align-items: center; justify-content: center;
-  position: relative; overflow: hidden;
+  height: 80vh; display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden; text-align: center;
 }
 
 .grid-overlay {
@@ -50,85 +53,97 @@ body {
   bottom: -50%; animation: moveGrid 20s linear infinite;
 }
 
-@keyframes moveGrid { from { transform: perspective(500px) rotateX(60deg) translateY(0); } to { transform: perspective(500px) rotateX(60deg) translateY(50px); } }
-
+@keyframes moveGrid { 
+  from { transform: perspective(500px) rotateX(60deg) translateY(0); } 
+  to { transform: perspective(500px) rotateX(60deg) translateY(50px); } 
+}
 .gradient-text {
-  background: linear-gradient(to right, var(--neon-blue), var(--neon-purple));
-  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background: linear-gradient(90deg, #00f2ff, #7000ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+/* --- NEW: SERVICE CARDS SECTION --- */
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 30px;
+  padding: 60px 8%;
 }
 
-/* --- CARDS & FORMS --- */
-.glass-card {
-  background: var(--glass-bg); padding: 40px; border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.1); transition: 0.4s ease;
+.service-card {
+  background: var(--glass-bg);
+  padding: 40px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: 0.4s ease;
+  position: relative;
 }
 
-.glass-card:hover {
-  transform: translateY(-10px); border-color: var(--neon-blue);
+.service-card:hover {
+  transform: translateY(-10px);
+  border-color: var(--neon-blue);
   box-shadow: 0 20px 40px rgba(0, 242, 255, 0.1);
+}
+
+.service-card h3 { color: var(--neon-blue); margin-bottom: 15px; }
+.service-card p { color: var(--text-dim); line-height: 1.6; }
+
+/* --- CONTACT FORM --- */
+.contact-view {
+  min-height: 90vh; display: flex; align-items: center; justify-content: center;
+}
+
+.contact-glass-box {
+  background: var(--glass-bg); padding: 50px; border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1); width: 100%; max-width: 500px;
+  backdrop-filter: blur(10px);
 }
 
 .tech-form input, .tech-form textarea {
   width: 100%; background: #111; border: 1px solid #333;
   padding: 15px; color: white; margin-bottom: 20px; border-radius: 10px;
+  font-family: inherit; box-sizing: border-box;
 }
 
 .neon-btn {
   width: 100%; padding: 15px; background: var(--neon-blue);
   color: black; font-weight: bold; border: none; cursor: pointer;
-  box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
-}
-/* Styling the Table Container */
-.admin-view table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 10px; /* Creates a gap between rows */
-  margin-top: 20px;
+  border-radius: 10px; box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
 }
 
-/* Styling the Header Row */
-.admin-view th {
-  background-color: #1a2a6c; /* Matches your Elite Consulting blue */
-  color: white;
-  padding: 15px;
-  text-align: left;
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: 1px;
+/* --- ADMIN TABLE STYLING --- */
+.admin-view { padding: 40px 8%; }
+
+.admin-nav {
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--neon-blue); padding-bottom: 20px; margin-bottom: 30px;
 }
 
-/* Styling the Message Received Column */
-.admin-view td {
-  background: rgba(255, 255, 255, 0.574);
-  padding: 15px;
-  color: #131083;
-  border-bottom: 1px solid #eee;
+.admin-table {
+  width: 100%; border-collapse: collapse; background: rgba(255, 255, 255, 0.02);
+  border-radius: 15px; overflow: hidden;
 }
 
-/* Special styling for the 'Project Message' text specifically */
-.message-cell {
-  font-family: 'Courier New', Courier, monospace; /* Tech/Code font */
-  background: #000000;
-  padding: 8px;
-  border-radius: 4px;
-  border-left: 3px solid var(--neon-blue); /* Subtle blue accent */
-  max-width: 300px;
-  word-wrap: break-word; /* Prevents long messages from breaking layout */
-  font-size: 14px;
+.admin-table th {
+  background: rgba(0, 242, 255, 0.1); color: var(--neon-blue);
+  padding: 20px; text-align: left; text-transform: uppercase; font-size: 13px;
 }
 
-/* Styling the Archive Button */
-.btn-archive {
-  background-color: #100a09;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: 0.3s;
+.admin-table td {
+  padding: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #ccc;
 }
 
-.btn-archive:hover {
-  background-color: #c0392b;
-  transform: scale(1.05);
+.message-text {
+  font-family: 'Courier New', monospace; font-size: 14px;
+  background: #000; padding: 10px; border-radius: 5px; color: var(--neon-blue);
 }
+
+.delete-btn {
+  background: #ff4b2b; color: white; border: none; padding: 10px 15px;
+  border-radius: 5px; cursor: pointer; transition: 0.3s;
+}
+
+.delete-btn:hover { box-shadow: 0 0 15px #ff4b2b; }
