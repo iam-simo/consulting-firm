@@ -302,7 +302,6 @@ body {
   cursor: pointer; font-family: inherit; font-size: 14px; padding: 0; text-decoration: underline;
 }
 
-/* ----- Admin Panel Styles ----- */
 .admin-view { padding: 40px 6%; }
 .admin-nav {
   display: flex; justify-content: space-between; align-items: center;
@@ -340,114 +339,6 @@ body {
 
 .admin-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
 
-/* ----- New Additions for Projects & UI Enhancements ----- */
-.status-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.status-active {
-  background: rgba(0, 255, 136, 0.15);
-  color: #00ff88;
-  border: 1px solid rgba(0, 255, 136, 0.3);
-}
-.status-on-hold {
-  background: rgba(255, 170, 0, 0.15);
-  color: #ffaa00;
-  border: 1px solid rgba(255, 170, 0, 0.3);
-}
-.status-completed {
-  background: rgba(0, 242, 255, 0.15);
-  color: var(--neon-blue);
-  border: 1px solid rgba(0, 242, 255, 0.3);
-}
-
-.edit-btn {
-  background: rgba(0, 242, 255, 0.1);
-  color: var(--neon-blue);
-  border: 1px solid rgba(0, 242, 255, 0.3);
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  margin-right: 8px;
-  transition: 0.2s;
-}
-.edit-btn:hover {
-  background: rgba(0, 242, 255, 0.2);
-}
-
-/* Dashboard stats cards */
-.admin-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px;
-  margin-bottom: 30px;
-}
-.stat-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  text-align: center;
-  color: var(--neon-blue);
-  font-weight: 600;
-  font-size: 16px;
-}
-
-/* Skeleton loading */
-.skeleton-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.skeleton-row {
-  height: 40px;
-  background: linear-gradient(90deg, #222 25%, #333 50%, #222 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  margin-bottom: 8px;
-  border-radius: 4px;
-}
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* Enhanced Animations */
-@keyframes glowPulse {
-  0% { text-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-blue); }
-  50% { text-shadow: 0 0 20px var(--neon-blue), 0 0 30px var(--neon-blue); }
-  100% { text-shadow: 0 0 5px var(--neon-blue), 0 0 10px var(--neon-blue); }
-}
-.glow {
-  animation: glowPulse 3s infinite;
-}
-
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.home-section {
-  animation: fadeUp 0.8s ease-out;
-}
-
-/* Hover effects for cards (already exist, but reinforce) */
-.service-card, .value-card, .team-card, .service-card-full {
-  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-}
-.service-card:hover, .value-card:hover, .team-card:hover, .service-card-full:hover {
-  transform: translateY(-8px);
-  border-color: var(--neon-blue);
-  box-shadow: 0 20px 40px rgba(0, 242, 255, 0.15);
-}
-
-/* Responsive */
 @media (max-width: 900px) {
   .contact-section { grid-template-columns: 1fr; }
   .contact-left { border-right: none; border-bottom: 1px solid var(--border); padding: 50px 6%; }

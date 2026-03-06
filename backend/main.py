@@ -49,17 +49,6 @@ def init_db():
         password_hash TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    # New projects table
-    conn.execute('''CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT,
-        status TEXT DEFAULT 'active',
-        start_date TEXT,
-        end_date TEXT,
-        client TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
     conn.commit()
     conn.close()
 
@@ -121,15 +110,6 @@ class LoginRequest(BaseModel):
     email: str
     password: str
     role: str
-
-# New Pydantic model for projects
-class ProjectRequest(BaseModel):
-    title: str
-    description: Optional[str] = ""
-    status: str = "active"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    client: Optional[str] = ""
 
 @app.post("/api/contact")
 async def receive_contact(req: ContactRequest):
@@ -197,46 +177,3 @@ async def get_users(_: str = Depends(verify_admin_key)):
     ).fetchall()]
     conn.close()
     return users
-
-# ----- New Project Endpoints -----
-@app.get("/api/admin/projects")
-async def get_projects(_: str = Depends(verify_admin_key)):
-    conn = get_conn()
-    projects = [dict(r) for r in conn.execute(
-        "SELECT * FROM projects ORDER BY id DESC"
-    ).fetchall()]
-    conn.close()
-    return projects
-
-@app.post("/api/admin/projects")
-async def create_project(proj: ProjectRequest, _: str = Depends(verify_admin_key)):
-    conn = get_conn()
-    cursor = conn.execute(
-        """INSERT INTO projects (title, description, status, start_date, end_date, client)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (proj.title, proj.description, proj.status, proj.start_date, proj.end_date, proj.client)
-    )
-    conn.commit()
-    new_id = cursor.lastrowid
-    conn.close()
-    return {"id": new_id, **proj.dict()}
-
-@app.put("/api/admin/projects/{project_id}")
-async def update_project(project_id: int, proj: ProjectRequest, _: str = Depends(verify_admin_key)):
-    conn = get_conn()
-    conn.execute(
-        """UPDATE projects SET title=?, description=?, status=?, start_date=?, end_date=?, client=?
-           WHERE id=?""",
-        (proj.title, proj.description, proj.status, proj.start_date, proj.end_date, proj.client, project_id)
-    )
-    conn.commit()
-    conn.close()
-    return {"message": "Project updated"}
-
-@app.delete("/api/admin/projects/{project_id}")
-async def delete_project(project_id: int, _: str = Depends(verify_admin_key)):
-    conn = get_conn()
-    conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    conn.commit()
-    conn.close()
-    return {"message": "Project deleted"}
