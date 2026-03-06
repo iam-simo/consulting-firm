@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-import sqlite3, os, smtplib, bcrypt
+import sqlite3, os, smtplib, bcrypt, threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from jose import jwt
@@ -66,26 +66,28 @@ async def verify_admin_key(x_admin_key: str = Header(None)):
     return x_admin_key
 
 def send_email(to: str, subject: str, html: str):
-    if not SMTP_USER or not SMTP_PASS:
-        print("SMTP not configured — skipping email")
-        return
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["From"]    = f"Elite Consulting <{SMTP_USER}>"
-        msg["To"]      = to
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html, "html"))
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, to, msg.as_string())
-        print(f"Email sent to {to}")
-    except smtplib.SMTPAuthenticationError:
-        print("SMTP auth failed — check SMTP_USER and SMTP_PASS (use Gmail App Password)")
-    except Exception as e:
-        print(f"Email failed: {type(e).__name__}: {e}")
+    def _send():
+        if not SMTP_USER or not SMTP_PASS:
+            print("SMTP not configured — skipping email")
+            return
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["From"]    = f"Elite Consulting <{SMTP_USER}>"
+            msg["To"]      = to
+            msg["Subject"] = subject
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(SMTP_USER, to, msg.as_string())
+            print(f"Email sent to {to}")
+        except smtplib.SMTPAuthenticationError:
+            print("SMTP auth failed — check Gmail App Password")
+        except Exception as e:
+            print(f"Email failed: {type(e).__name__}: {e}")
+    threading.Thread(target=_send, daemon=True).start()
 
 def send_enquiry_notification(name: str, email: str, service: str, message: str):
     if not NOTIFY_EMAIL:
@@ -129,11 +131,11 @@ def send_login_notification(name: str, email: str):
       <div style="background:#0a0a0a;padding:20px;border-radius:8px;margin:24px 0;
                   border:1px solid rgba(0,242,255,0.15)">
         <p style="color:#888;font-size:11px;letter-spacing:2px;margin:0 0 8px">SIGN-IN DETAILS</p>
-        <p style="color:#e0e0e0;margin:0">🕐 {now}</p>
-        <p style="color:#e0e0e0;margin:8px 0 0">📧 {email}</p>
+        <p style="color:#e0e0e0;margin:0">Time: {now}</p>
+        <p style="color:#e0e0e0;margin:8px 0 0">Account: {email}</p>
       </div>
       <p style="color:#b0b0b0;line-height:1.7;font-size:14px">
-        If this wasn't you, please contact us immediately.
+        If this was not you, please contact us immediately.
       </p>
     </div>"""
     send_email(email, "Sign-In Detected — Elite Consulting", html)
@@ -149,6 +151,7 @@ def send_welcome_email(name: str, email: str):
       <p style="color:#b0b0b0;line-height:1.7">
         Hi <strong style="color:#fff">{name}</strong>,<br><br>
         Your Elite Consulting client account has been created successfully.
+        You can now sign in to access the client portal.
       </p>
       <div style="background:#00f2ff;padding:16px 24px;border-radius:8px;
                   text-align:center;margin:24px 0">
@@ -157,7 +160,7 @@ def send_welcome_email(name: str, email: str):
         </p>
       </div>
       <p style="color:#b0b0b0;line-height:1.7;font-size:14px">
-        If you have any questions, reach us at hello@eliteconsulting.co.ke
+        Questions? Reach us at hello@eliteconsulting.co.ke
       </p>
     </div>"""
     send_email(email, "Welcome to Elite Consulting", html)
