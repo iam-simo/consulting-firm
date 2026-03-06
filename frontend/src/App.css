@@ -3,7 +3,7 @@
 /* ── TOKENS ─────────────────────────────────────────────────── */
 :root {
   --bg:        #212325;
-  --surface:   #152640;
+  --surface:   #154022dc;
   --surface2:  #1c3050;
   --border:    rgba(100,180,255,0.15);
   --border-hi: rgba(56,189,248,0.5);
@@ -272,7 +272,7 @@ body {
 
 input, textarea, select {
   width: 100%; background: rgba(0,0,0,.3); color: var(--text);
-  border: 1px solid rgba(56,189,248,.18); padding: 11px 14px;
+  border: 1px solid rgba(56, 248, 91, 0.18); padding: 11px 14px;
   border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
   margin-bottom: 12px; display: block; box-sizing: border-box; transition: all .2s;
 }
