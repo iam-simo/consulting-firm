@@ -65,35 +65,102 @@ async def verify_admin_key(x_admin_key: str = Header(None)):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return x_admin_key
 
-def send_enquiry_email(name: str, email: str, service: str, message: str):
-    if not SMTP_USER or not SMTP_PASS or not NOTIFY_EMAIL:
+def send_email(to: str, subject: str, html: str):
+    if not SMTP_USER or not SMTP_PASS:
+        print("SMTP not configured — skipping email")
         return
     try:
         msg = MIMEMultipart("alternative")
-        msg["From"]    = SMTP_USER
-        msg["To"]      = NOTIFY_EMAIL
-        msg["Subject"] = f"New Enquiry from {name} — Elite Consulting"
-        html = f"""
-        <div style="font-family:sans-serif;max-width:600px;margin:auto;background:#0a0a0a;
-                    color:#e0e0e0;padding:40px;border-radius:12px;border:1px solid #00f2ff33">
-          <h2 style="color:#00f2ff;margin-top:0">New Client Enquiry</h2>
-          <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:10px 0;color:#888;width:90px">Name</td><td>{name}</td></tr>
-            <tr><td style="padding:10px 0;color:#888">Email</td><td>{email}</td></tr>
-            <tr><td style="padding:10px 0;color:#888">Service</td><td>{service or 'Not specified'}</td></tr>
-          </table>
-          <div style="margin-top:20px;background:#111;padding:20px;border-radius:8px;border-left:3px solid #00f2ff">
-            <p style="color:#888;margin:0 0 8px;font-size:13px">MESSAGE</p>
-            <p style="margin:0;line-height:1.6">{message}</p>
-          </div>
-        </div>"""
+        msg["From"]    = f"Elite Consulting <{SMTP_USER}>"
+        msg["To"]      = to
+        msg["Subject"] = subject
         msg.attach(MIMEText(html, "html"))
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+            server.sendmail(SMTP_USER, to, msg.as_string())
+        print(f"Email sent to {to}")
+    except smtplib.SMTPAuthenticationError:
+        print("SMTP auth failed — check SMTP_USER and SMTP_PASS (use Gmail App Password)")
     except Exception as e:
-        print(f"Email failed: {e}")
+        print(f"Email failed: {type(e).__name__}: {e}")
+
+def send_enquiry_notification(name: str, email: str, service: str, message: str):
+    if not NOTIFY_EMAIL:
+        return
+    html = f"""
+    <div style="font-family:monospace;max-width:600px;margin:auto;background:#050505;
+                color:#e0e0e0;padding:40px;border:1px solid #00f2ff33;border-radius:12px">
+      <div style="border-left:4px solid #00f2ff;padding-left:16px;margin-bottom:30px">
+        <p style="color:#00f2ff;font-size:11px;letter-spacing:3px;margin:0">ELITE CONSULTING</p>
+        <h2 style="color:#fff;margin:8px 0 0;font-size:22px">New Client Enquiry</h2>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+        <tr><td style="padding:10px 0;color:#888;width:100px">Name</td>
+            <td style="padding:10px 0;color:#fff;font-weight:600">{name}</td></tr>
+        <tr><td style="padding:10px 0;color:#888">Email</td>
+            <td style="padding:10px 0;color:#00f2ff">{email}</td></tr>
+        <tr><td style="padding:10px 0;color:#888">Service</td>
+            <td style="padding:10px 0;color:#fff">{service or 'Not specified'}</td></tr>
+      </table>
+      <div style="background:#0a0a0a;padding:20px;border-radius:8px;border-left:3px solid #00f2ff">
+        <p style="color:#888;font-size:11px;letter-spacing:2px;margin:0 0 10px">MESSAGE</p>
+        <p style="color:#e0e0e0;line-height:1.7;margin:0">{message}</p>
+      </div>
+      <p style="color:#444;font-size:12px;margin-top:24px">Reply directly to {email} to respond.</p>
+    </div>"""
+    send_email(NOTIFY_EMAIL, f"New Enquiry from {name} — Elite Consulting", html)
+
+def send_login_notification(name: str, email: str):
+    now = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
+    html = f"""
+    <div style="font-family:monospace;max-width:600px;margin:auto;background:#050505;
+                color:#e0e0e0;padding:40px;border:1px solid #00f2ff33;border-radius:12px">
+      <div style="border-left:4px solid #00f2ff;padding-left:16px;margin-bottom:30px">
+        <p style="color:#00f2ff;font-size:11px;letter-spacing:3px;margin:0">ELITE CONSULTING</p>
+        <h2 style="color:#fff;margin:8px 0 0;font-size:22px">Sign-In Detected</h2>
+      </div>
+      <p style="color:#b0b0b0;line-height:1.7">
+        Hi <strong style="color:#fff">{name}</strong>,<br><br>
+        A successful sign-in to your Elite Consulting account was detected.
+      </p>
+      <div style="background:#0a0a0a;padding:20px;border-radius:8px;margin:24px 0;
+                  border:1px solid rgba(0,242,255,0.15)">
+        <p style="color:#888;font-size:11px;letter-spacing:2px;margin:0 0 8px">SIGN-IN DETAILS</p>
+        <p style="color:#e0e0e0;margin:0">🕐 {now}</p>
+        <p style="color:#e0e0e0;margin:8px 0 0">📧 {email}</p>
+      </div>
+      <p style="color:#b0b0b0;line-height:1.7;font-size:14px">
+        If this wasn't you, please contact us immediately.
+      </p>
+    </div>"""
+    send_email(email, "Sign-In Detected — Elite Consulting", html)
+
+def send_welcome_email(name: str, email: str):
+    html = f"""
+    <div style="font-family:monospace;max-width:600px;margin:auto;background:#050505;
+                color:#e0e0e0;padding:40px;border:1px solid #00f2ff33;border-radius:12px">
+      <div style="border-left:4px solid #00f2ff;padding-left:16px;margin-bottom:30px">
+        <p style="color:#00f2ff;font-size:11px;letter-spacing:3px;margin:0">ELITE CONSULTING</p>
+        <h2 style="color:#fff;margin:8px 0 0;font-size:22px">Welcome Aboard</h2>
+      </div>
+      <p style="color:#b0b0b0;line-height:1.7">
+        Hi <strong style="color:#fff">{name}</strong>,<br><br>
+        Your Elite Consulting client account has been created successfully.
+      </p>
+      <div style="background:#00f2ff;padding:16px 24px;border-radius:8px;
+                  text-align:center;margin:24px 0">
+        <p style="color:#000;font-weight:700;font-size:16px;margin:0;letter-spacing:1px">
+          ACCOUNT ACTIVATED
+        </p>
+      </div>
+      <p style="color:#b0b0b0;line-height:1.7;font-size:14px">
+        If you have any questions, reach us at hello@eliteconsulting.co.ke
+      </p>
+    </div>"""
+    send_email(email, "Welcome to Elite Consulting", html)
 
 class ContactRequest(BaseModel):
     name: str
@@ -120,7 +187,7 @@ async def receive_contact(req: ContactRequest):
     )
     conn.commit()
     conn.close()
-    send_enquiry_email(req.name, req.email, req.service, req.message)
+    send_enquiry_notification(req.name, req.email, req.service, req.message)
     return {"status": "success"}
 
 @app.post("/api/auth/register")
@@ -137,6 +204,7 @@ async def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Email already registered")
     finally:
         conn.close()
+    send_welcome_email(req.name, req.email)
     return {"status": "success", "message": "Account created. Please sign in."}
 
 @app.post("/api/auth/login")
@@ -151,6 +219,7 @@ async def login(req: LoginRequest):
     conn.close()
     if not row or not bcrypt.checkpw(req.password.encode(), row["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    send_login_notification(row["name"], row["email"])
     token = create_token({"sub": row["email"], "role": "user", "name": row["name"]})
     return {"token": token, "role": "user", "name": row["name"]}
 
