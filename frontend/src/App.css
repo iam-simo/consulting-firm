@@ -7,12 +7,12 @@
   --surface2:  #1c3050;
   --border:    rgba(100,180,255,0.15);
   --border-hi: rgba(56,189,248,0.5);
-  --blue:      #38bdf8;
+  --blue:      #0e98d4;
   --green:     #34d399;
-  --amber:     #fbbf24;
+  --amber:     #e8aa0e;
   --red:       #f87171;
-  --text:      #e8f4ff;
-  --body:      #b8d0e8;
+  --text:      #0e9f24;
+  --body:      #738da8;
   --dim:       #7a9ab8;
   --dim2:      #4a6a88;
   --neon:      #38bdf8;
@@ -158,7 +158,7 @@ body {
 /* ── BUTTONS ──────────────────────────────────────────────────── */
 .btn-primary {
   display: inline-flex; align-items: center; gap: 8px;
-  background: var(--blue); color: #000;
+  background: var(--blue); color: #220962;
   font-family: 'Rajdhani', sans-serif; font-weight: 700;
   font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
   border: none; padding: 13px 28px; border-radius: 4px; cursor: pointer;
