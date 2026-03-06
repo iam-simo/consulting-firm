@@ -9,7 +9,6 @@ function App() {
   const [auth, setAuth] = useState(null);
   const [contactData, setContactData] = useState({ name: '', email: '', service: '', message: '' });
   const [contactStatus, setContactStatus] = useState('idle');
-  const [signInTab, setSignInTab]     = useState('user');
   const [signInMode, setSignInMode]   = useState('login');
   const [signInData, setSignInData]   = useState({ name: '', email: '', password: '' });
   const [signInError, setSignInError] = useState('');
@@ -52,15 +51,29 @@ function App() {
         setSignInData({ name: '', email: signInData.email, password: '' });
         return;
       }
-      const res = await fetch(`${API}/api/auth/login`, {
+
+      // Try admin first, then fall back to user
+      let result = null;
+      const adminRes = await fetch(`${API}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: signInData.email, password: signInData.password, role: signInTab }),
+        body: JSON.stringify({ email: signInData.email, password: signInData.password, role: 'admin' }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Login failed');
-      setAuth({ token: data.token, role: data.role, name: data.name });
-      setPage(data.role === 'admin' ? 'admin' : 'home');
+      if (adminRes.ok) {
+        result = await adminRes.json();
+      } else {
+        const userRes = await fetch(`${API}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: signInData.email, password: signInData.password, role: 'user' }),
+        });
+        const data = await userRes.json();
+        if (!userRes.ok) throw new Error(data.detail || 'Incorrect email or password');
+        result = data;
+      }
+
+      setAuth({ token: result.token, role: result.role, name: result.name });
+      setPage(result.role === 'admin' ? 'admin' : 'home');
     } catch (err) {
       setSignInError(err.message);
     } finally {
@@ -339,25 +352,13 @@ function App() {
       <Navbar />
       <section className="signin-section">
         <div className="signin-box">
-          <h2 className="glow" style={{marginBottom:'8px'}}>ACCESS PORTAL</h2>
+          <h2 className="glow" style={{marginBottom:'8px'}}>SIGN IN</h2>
           <p style={{color:'var(--text-dim)', fontSize:'14px', marginBottom:'30px'}}>
-            Sign in as a client or administrator
+            {signInMode === 'register' ? 'Create a new client account' : 'Welcome back — enter your credentials'}
           </p>
-          <div className="signin-tabs">
-            <button
-              className={`tab-btn ${signInTab === 'user' ? 'tab-active' : ''}`}
-              onClick={() => { setSignInTab('user'); setSignInError(''); setSignInOk(''); setSignInMode('login'); }}>
-              Client Portal
-            </button>
-            <button
-              className={`tab-btn ${signInTab === 'admin' ? 'tab-active' : ''}`}
-              onClick={() => { setSignInTab('admin'); setSignInError(''); setSignInOk(''); setSignInMode('login'); }}>
-              Admin Access
-            </button>
-          </div>
 
-          <form onSubmit={handleSignIn} className="tech-form" style={{marginTop:'25px'}}>
-            {signInTab === 'user' && signInMode === 'register' && (
+          <form onSubmit={handleSignIn} className="tech-form">
+            {signInMode === 'register' && (
               <input type="text" placeholder="Full Name" required value={signInData.name}
                 onChange={e => setSignInData({...signInData, name: e.target.value})} />
             )}
@@ -365,30 +366,30 @@ function App() {
               onChange={e => setSignInData({...signInData, email: e.target.value})} />
             <input type="password" placeholder="Password" required value={signInData.password}
               onChange={e => setSignInData({...signInData, password: e.target.value})} />
-            {signInOk   && <div className="form-success">{signInOk}</div>}
+
+            {signInOk    && <div className="form-success">{signInOk}</div>}
             {signInError && <div className="form-error">{signInError}</div>}
+
             <button type="submit" className="neon-btn" disabled={signInBusy}>
-              {signInBusy ? 'Verifying...' : signInTab === 'admin' ? 'Access Admin Panel' : signInMode === 'register' ? 'Create Account' : 'Sign In'}
+              {signInBusy ? 'Verifying...' : signInMode === 'register' ? 'Create Account' : 'Sign In'}
             </button>
           </form>
 
-          {signInTab === 'user' && (
-            <div className="signin-footer">
-              {signInMode === 'login' ? (
-                <span>New client?{' '}
-                  <button className="link-btn" onClick={() => { setSignInMode('register'); setSignInError(''); setSignInOk(''); }}>
-                    Create an account
-                  </button>
-                </span>
-              ) : (
-                <span>Already registered?{' '}
-                  <button className="link-btn" onClick={() => { setSignInMode('login'); setSignInError(''); setSignInOk(''); }}>
-                    Sign in
-                  </button>
-                </span>
-              )}
-            </div>
-          )}
+          <div className="signin-footer">
+            {signInMode === 'login' ? (
+              <span>New client?{' '}
+                <button className="link-btn" onClick={() => { setSignInMode('register'); setSignInError(''); setSignInOk(''); }}>
+                  Create an account
+                </button>
+              </span>
+            ) : (
+              <span>Already have an account?{' '}
+                <button className="link-btn" onClick={() => { setSignInMode('login'); setSignInError(''); setSignInOk(''); }}>
+                  Sign in
+                </button>
+              </span>
+            )}
+          </div>
         </div>
       </section>
     </div>
