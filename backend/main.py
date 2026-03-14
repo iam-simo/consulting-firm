@@ -135,9 +135,21 @@ def get_current_user(authorization: str = Header(None)):
     try: return jwt.decode(authorization.split(" ")[1], JWT_SECRET, algorithms=["HS256"])
     except JWTError: raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-async def verify_admin_key(x_admin_key: str = Header(None)):
+async def verify_admin(x_admin_key: str = Header(None)):
     if x_admin_key != ADMIN_API_KEY: raise HTTPException(status_code=403, detail="Unauthorized")
     return x_admin_key
+
+async def verify_admin(x_admin_key: str = Header(None), authorization: str = Header(None)):
+    if x_admin_key and x_admin_key == ADMIN_API_KEY:
+        return True
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            payload = jwt.decode(authorization.split(" ")[1], JWT_SECRET, algorithms=["HS256"])
+            if payload.get("role") == "admin":
+                return True
+        except JWTError:
+            pass
+    raise HTTPException(status_code=403, detail="Unauthorized")
 
 def send_email(to, subject, html):
     def _send():
@@ -450,15 +462,15 @@ async def get_post(slug: str):
     return dict(row)
 
 @app.get("/api/admin/leads")
-async def get_leads(_=Depends(verify_admin_key)):
+async def get_leads(_=Depends(verify_admin)):
     conn = get_conn(); leads = [dict(r) for r in conn.execute("SELECT * FROM leads ORDER BY id DESC").fetchall()]; conn.close(); return leads
 
 @app.delete("/api/admin/leads/{lid}")
-async def delete_lead(lid: int, _=Depends(verify_admin_key)):
+async def delete_lead(lid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM leads WHERE id=?", (lid,)); conn.commit(); conn.close(); return {"message": "Deleted"}
 
 @app.put("/api/admin/leads/{lid}")
-async def update_lead(lid: int, req: UpdateLeadRequest, _=Depends(verify_admin_key)):
+async def update_lead(lid: int, req: UpdateLeadRequest, _=Depends(verify_admin)):
     conn = get_conn(); lead = conn.execute("SELECT * FROM leads WHERE id=?", (lid,)).fetchone()
     if not lead: conn.close(); raise HTTPException(status_code=404)
     conn.execute("UPDATE leads SET status=?,admin_response=?,read_by_admin=1 WHERE id=?", (req.status, req.admin_response, lid))
@@ -467,13 +479,13 @@ async def update_lead(lid: int, req: UpdateLeadRequest, _=Depends(verify_admin_k
     return {"message": "Updated"}
 
 @app.post("/api/admin/leads/bulk")
-async def bulk_leads(req: BulkLeadRequest, _=Depends(verify_admin_key)):
+async def bulk_leads(req: BulkLeadRequest, _=Depends(verify_admin)):
     conn = get_conn()
     for lid in req.ids: conn.execute("UPDATE leads SET status=? WHERE id=?", (req.status, lid))
     conn.commit(); conn.close(); return {"message": f"Updated {len(req.ids)} leads"}
 
 @app.get("/api/admin/leads/export")
-async def export_leads(_=Depends(verify_admin_key)):
+async def export_leads(_=Depends(verify_admin)):
     conn = get_conn(); leads = conn.execute("SELECT * FROM leads ORDER BY id DESC").fetchall(); conn.close()
     out = io.StringIO(); w = csv.writer(out)
     w.writerow(["ID","Name","Email","Service","Message","Status","Score","Response","Created"])
@@ -482,21 +494,21 @@ async def export_leads(_=Depends(verify_admin_key)):
     return Response(content=out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=leads.csv"})
 
 @app.get("/api/admin/users")
-async def get_users(_=Depends(verify_admin_key)):
+async def get_users(_=Depends(verify_admin)):
     conn = get_conn(); users = [dict(r) for r in conn.execute("SELECT id,name,email,created_at,newsletter,onboarding_step FROM users ORDER BY id DESC").fetchall()]; conn.close(); return users
 
 @app.delete("/api/admin/users/{uid}")
-async def delete_user(uid: int, _=Depends(verify_admin_key)):
+async def delete_user(uid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM users WHERE id=?", (uid,)); conn.commit(); conn.close(); return {"message": "Deleted"}
 
 @app.get("/api/admin/messages")
-async def get_all_messages(_=Depends(verify_admin_key)):
+async def get_all_messages(_=Depends(verify_admin)):
     conn = get_conn()
     rows = conn.execute("SELECT m.*,u.name as user_name,u.email as user_email FROM messages m JOIN users u ON m.user_id=u.id ORDER BY m.created_at ASC").fetchall()
     conn.close(); return [dict(r) for r in rows]
 
 @app.post("/api/admin/messages/reply")
-async def admin_reply(req: ReplyRequest, _=Depends(verify_admin_key)):
+async def admin_reply(req: ReplyRequest, _=Depends(verify_admin)):
     conn = get_conn(); user = conn.execute("SELECT name,email FROM users WHERE id=?", (req.user_id,)).fetchone()
     if not user: conn.close(); raise HTTPException(status_code=404)
     conn.execute("INSERT INTO messages (user_id,sender,content) VALUES (?,?,?)", (req.user_id, "admin", req.content))
@@ -506,7 +518,7 @@ async def admin_reply(req: ReplyRequest, _=Depends(verify_admin_key)):
     return {"status": "success"}
 
 @app.get("/api/admin/unread")
-async def admin_unread(_=Depends(verify_admin_key)):
+async def admin_unread(_=Depends(verify_admin)):
     conn = get_conn()
     msgs  = conn.execute("SELECT COUNT(*) as c FROM messages WHERE sender='user' AND read_by_admin=0").fetchone()["c"]
     leads = conn.execute("SELECT COUNT(*) as c FROM leads WHERE read_by_admin=0").fetchone()["c"]
@@ -514,11 +526,11 @@ async def admin_unread(_=Depends(verify_admin_key)):
     conn.close(); return {"messages": msgs, "leads": leads, "appointments": appts, "total": msgs+leads+appts}
 
 @app.post("/api/admin/projects")
-async def create_project(user_id: int, title: str, description: str = "", status: str = "in_progress", progress: int = 0, phase: str = "Discovery", _=Depends(verify_admin_key)):
+async def create_project(user_id: int, title: str, description: str = "", status: str = "in_progress", progress: int = 0, phase: str = "Discovery", _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("INSERT INTO projects (user_id,title,description,status,progress,phase) VALUES (?,?,?,?,?,?)", (user_id, title, description, status, progress, phase)); conn.commit(); conn.close(); return {"status": "success"}
 
 @app.put("/api/admin/projects/{pid}")
-async def update_project(pid: int, title: str = None, description: str = None, status: str = None, progress: int = None, phase: str = None, _=Depends(verify_admin_key)):
+async def update_project(pid: int, title: str = None, description: str = None, status: str = None, progress: int = None, phase: str = None, _=Depends(verify_admin)):
     conn = get_conn(); p = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
     if not p: conn.close(); raise HTTPException(status_code=404)
     conn.execute("UPDATE projects SET title=?,description=?,status=?,progress=?,phase=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -527,32 +539,32 @@ async def update_project(pid: int, title: str = None, description: str = None, s
     conn.commit(); conn.close(); return {"status": "success"}
 
 @app.delete("/api/admin/projects/{pid}")
-async def delete_project(pid: int, _=Depends(verify_admin_key)):
+async def delete_project(pid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM projects WHERE id=?", (pid,)); conn.commit(); conn.close(); return {"message": "Deleted"}
 
 @app.post("/api/admin/milestones")
-async def create_milestone(req: MilestoneRequest, _=Depends(verify_admin_key)):
+async def create_milestone(req: MilestoneRequest, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("INSERT INTO milestones (project_id,title,phase,due_date) VALUES (?,?,?,?)", (req.project_id, req.title, req.phase, req.due_date)); conn.commit(); conn.close(); return {"status": "success"}
 
 @app.put("/api/admin/milestones/{mid}")
-async def update_milestone(mid: int, done: bool = False, _=Depends(verify_admin_key)):
+async def update_milestone(mid: int, done: bool = False, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("UPDATE milestones SET done=? WHERE id=?", (1 if done else 0, mid)); conn.commit(); conn.close(); return {"status": "success"}
 
 @app.post("/api/admin/documents")
-async def upload_doc(user_id: int = Form(...), title: str = Form(...), doc_type: str = Form("general"), file: UploadFile = File(...), _=Depends(verify_admin_key)):
+async def upload_doc(user_id: int = Form(...), title: str = Form(...), doc_type: str = Form("general"), file: UploadFile = File(...), _=Depends(verify_admin)):
     ext = os.path.splitext(file.filename)[1]; safe = f"{secrets.token_hex(8)}{ext}"; path = os.path.join("uploads", safe)
     with open(path, "wb") as f: f.write(await file.read())
     conn = get_conn(); conn.execute("INSERT INTO documents (user_id,title,filename,file_path,doc_type) VALUES (?,?,?,?,?)", (user_id, title, file.filename, path, doc_type)); conn.commit(); conn.close()
     return {"status": "success"}
 
 @app.get("/api/admin/documents/{did}/download")
-async def download_doc(did: int, _=Depends(verify_admin_key)):
+async def download_doc(did: int, _=Depends(verify_admin)):
     conn = get_conn(); doc = conn.execute("SELECT * FROM documents WHERE id=?", (did,)).fetchone(); conn.close()
     if not doc: raise HTTPException(status_code=404)
     return FileResponse(doc["file_path"], filename=doc["filename"])
 
 @app.delete("/api/admin/documents/{did}")
-async def delete_doc(did: int, _=Depends(verify_admin_key)):
+async def delete_doc(did: int, _=Depends(verify_admin)):
     conn = get_conn(); doc = conn.execute("SELECT * FROM documents WHERE id=?", (did,)).fetchone()
     if doc:
         try: os.remove(doc["file_path"])
@@ -561,19 +573,19 @@ async def delete_doc(did: int, _=Depends(verify_admin_key)):
     conn.close(); return {"message": "Deleted"}
 
 @app.get("/api/admin/appointments")
-async def get_appointments(_=Depends(verify_admin_key)):
+async def get_appointments(_=Depends(verify_admin)):
     conn = get_conn(); rows = conn.execute("SELECT * FROM appointments ORDER BY date DESC,time DESC").fetchall(); conn.close(); return [dict(r) for r in rows]
 
 @app.put("/api/admin/appointments/{aid}")
-async def update_appointment(aid: int, status: str, _=Depends(verify_admin_key)):
+async def update_appointment(aid: int, status: str, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("UPDATE appointments SET status=? WHERE id=?", (status, aid)); conn.commit(); conn.close(); return {"status": "success"}
 
 @app.get("/api/admin/newsletter")
-async def get_newsletter(_=Depends(verify_admin_key)):
+async def get_newsletter(_=Depends(verify_admin)):
     conn = get_conn(); rows = conn.execute("SELECT * FROM newsletter ORDER BY created_at DESC").fetchall(); conn.close(); return [dict(r) for r in rows]
 
 @app.get("/api/admin/analytics")
-async def get_analytics(_=Depends(verify_admin_key)):
+async def get_analytics(_=Depends(verify_admin)):
     conn = get_conn()
     totals = {
         "leads":    conn.execute("SELECT COUNT(*) as c FROM leads").fetchone()["c"],
@@ -591,23 +603,23 @@ async def get_analytics(_=Depends(verify_admin_key)):
     return {"totals": totals, "by_status": by_status, "by_service": by_service, "by_score": by_score, "by_week": by_week}
 
 @app.get("/api/admin/testimonials")
-async def admin_testimonials(_=Depends(verify_admin_key)):
+async def admin_testimonials(_=Depends(verify_admin)):
     conn = get_conn(); rows = conn.execute("SELECT * FROM testimonials ORDER BY created_at DESC").fetchall(); conn.close(); return [dict(r) for r in rows]
 
 @app.put("/api/admin/testimonials/{tid}")
-async def approve_testimonial(tid: int, approved: bool, _=Depends(verify_admin_key)):
+async def approve_testimonial(tid: int, approved: bool, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("UPDATE testimonials SET approved=? WHERE id=?", (1 if approved else 0, tid)); conn.commit(); conn.close(); return {"status": "success"}
 
 @app.delete("/api/admin/testimonials/{tid}")
-async def delete_testimonial(tid: int, _=Depends(verify_admin_key)):
+async def delete_testimonial(tid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM testimonials WHERE id=?", (tid,)); conn.commit(); conn.close(); return {"message": "Deleted"}
 
 @app.get("/api/admin/blog")
-async def admin_blog(_=Depends(verify_admin_key)):
+async def admin_blog(_=Depends(verify_admin)):
     conn = get_conn(); rows = conn.execute("SELECT * FROM blog_posts ORDER BY created_at DESC").fetchall(); conn.close(); return [dict(r) for r in rows]
 
 @app.post("/api/admin/blog")
-async def create_post(req: BlogPostRequest, _=Depends(verify_admin_key)):
+async def create_post(req: BlogPostRequest, _=Depends(verify_admin)):
     conn = get_conn()
     try:
         conn.execute("INSERT INTO blog_posts (title,slug,excerpt,content,tags,published) VALUES (?,?,?,?,?,?)",
@@ -618,12 +630,12 @@ async def create_post(req: BlogPostRequest, _=Depends(verify_admin_key)):
     return {"status": "success"}
 
 @app.put("/api/admin/blog/{bid}")
-async def update_post(bid: int, req: BlogPostRequest, _=Depends(verify_admin_key)):
+async def update_post(bid: int, req: BlogPostRequest, _=Depends(verify_admin)):
     conn = get_conn()
     conn.execute("UPDATE blog_posts SET title=?,excerpt=?,content=?,tags=?,published=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                  (req.title, req.excerpt, req.content, req.tags, 1 if req.published else 0, bid))
     conn.commit(); conn.close(); return {"status": "success"}
 
 @app.delete("/api/admin/blog/{bid}")
-async def delete_post(bid: int, _=Depends(verify_admin_key)):
+async def delete_post(bid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM blog_posts WHERE id=?", (bid,)); conn.commit(); conn.close(); return {"message": "Deleted"}

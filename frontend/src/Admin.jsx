@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API   = 'https://consulting-backend-y19q.onrender.com';
-const AKEY  = 'temporary_dev_key';
-const H     = { 'x-admin-key': AKEY, 'Content-Type': 'application/json' };
+const API = 'https://consulting-backend-y19q.onrender.com';
 
 const SCORE_META = {
   hot:  { color: '#ff6b6b', bg: 'rgba(255,107,107,0.12)', label: '🔥 Hot'  },
@@ -18,6 +16,12 @@ const STATUS_COLORS = {
 };
 
 export default function Admin() {
+  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('admin_token') || '');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   const [tab, setTab]               = useState('dashboard');
   const [leads, setLeads]           = useState([]);
   const [users, setUsers]           = useState([]);
@@ -31,40 +35,67 @@ export default function Admin() {
   const [unread, setUnread]         = useState({ messages:0, leads:0, appointments:0, total:0 });
   const [loading, setLoading]       = useState(true);
 
-  // Lead management
   const [selLead, setSelLead]       = useState(null);
   const [leadStatus, setLeadStatus] = useState('');
   const [leadResp, setLeadResp]     = useState('');
   const [selLeads, setSelLeads]     = useState([]);
   const [bulkStatus, setBulkStatus] = useState('reviewed');
 
-  // Messages
   const [selUser, setSelUser]       = useState(null);
   const [reply, setReply]           = useState('');
   const [replySending, setReplySending] = useState(false);
 
-  // Projects
   const [pForm, setPForm]           = useState({ user_id:'', title:'', description:'', status:'in_progress', progress:0, phase:'Discovery' });
   const [pEdit, setPEdit]           = useState(null);
   const [mForm, setMForm]           = useState({ project_id:'', title:'', phase:'Discovery', due_date:'' });
 
-  // Blog
   const [bForm, setBForm]           = useState({ title:'', slug:'', excerpt:'', content:'', tags:'', published: false });
   const [bEdit, setBEdit]           = useState(null);
 
-  // Testimonials
-  // Documents
   const [docForm, setDocForm]       = useState({ user_id:'', title:'', doc_type:'general' });
   const [docFile, setDocFile]       = useState(null);
 
-  // Search / filter
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilter, setLeadFilter] = useState('all');
+
+  // Build auth headers from JWT token
+  const H = adminToken
+    ? { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json' };
+
+  // ── ADMIN LOGIN ───────────────────────────────────────────
+  const doLogin = async () => {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const r = await fetch(`${API}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword, role: 'admin' }),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        setLoginError(err.detail || 'Invalid credentials');
+      } else {
+        const data = await r.json();
+        localStorage.setItem('admin_token', data.token);
+        setAdminToken(data.token);
+      }
+    } catch(e) {
+      setLoginError('Connection error — check your backend is running.');
+    }
+    setLoginLoading(false);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('admin_token');
+    setAdminToken('');
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const [lR, uR, mR, aR, apR, anR, tR, bR, nR, urR] = await Promise.all([
+      const [lR, uR, mR, aR, apR, anR, tR, bR, nR] = await Promise.all([
         fetch(`${API}/api/admin/leads`,        { headers: H }),
         fetch(`${API}/api/admin/users`,        { headers: H }),
         fetch(`${API}/api/admin/messages`,     { headers: H }),
@@ -74,8 +105,6 @@ export default function Admin() {
         fetch(`${API}/api/admin/blog`,         { headers: H }),
         fetch(`${API}/api/admin/newsletter`,   { headers: H }),
         fetch(`${API}/api/admin/unread`,       { headers: H }),
-        // projects per user fetched separately below
-        fetch(`${API}/api/admin/leads`,        { headers: H }), // placeholder
       ]);
       if (lR.ok)  setLeads(await lR.json());
       if (uR.ok)  setUsers(await uR.json());
@@ -86,11 +115,15 @@ export default function Admin() {
       if (tR.ok)  setBlogPosts(await tR.json());
       if (bR.ok)  setNewsletter(await bR.json());
       if (nR.ok)  setUnread(await nR.json());
+      // If any 401/403, token is expired — force re-login
+      if ([lR, uR, mR, aR, apR].some(r => r.status === 401 || r.status === 403)) {
+        logout();
+      }
     } catch(e) { console.error(e); }
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (adminToken) load(); }, [adminToken]);
 
   // ── LEADS ─────────────────────────────────────────────────
   const saveLead = async (id) => {
@@ -117,7 +150,16 @@ export default function Admin() {
   };
 
   const exportCSV = () => {
-    window.open(`${API}/api/admin/leads/export?x-admin-key=${AKEY}`, '_blank');
+    const token = adminToken;
+    const url = `${API}/api/admin/leads/export`;
+    fetch(url, { headers: H })
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'leads.csv';
+        a.click();
+      });
   };
 
   const toggleSelLead = (id) => {
@@ -218,7 +260,7 @@ export default function Admin() {
     fd.append('doc_type', docForm.doc_type);
     fd.append('file', docFile);
     await fetch(`${API}/api/admin/documents`, {
-      method:'POST', headers:{ 'x-admin-key': AKEY }, body: fd,
+      method:'POST', headers:{ 'Authorization': `Bearer ${adminToken}` }, body: fd,
     });
     setDocForm({ user_id:'', title:'', doc_type:'general' }); setDocFile(null); load();
   };
@@ -235,6 +277,49 @@ export default function Admin() {
     { id:'testimonials',  label:'Testimonials',   icon:'⭐' },
     { id:'newsletter',    label:'Newsletter',     icon:'📧' },
   ];
+
+  // ── LOGIN SCREEN ──────────────────────────────────────────
+  if (!adminToken) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'var(--bg)' }}>
+        <div style={{ background:'var(--surface)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:8, padding:40, width:380, maxWidth:'90vw' }}>
+          <div style={{ color:'var(--blue)', fontFamily:"'JetBrains Mono',monospace", fontSize:11, letterSpacing:4, marginBottom:8, textAlign:'center' }}>
+            ELITE CONSULTING
+          </div>
+          <h2 style={{ color:'var(--text)', fontWeight:700, fontSize:22, marginBottom:24, textAlign:'center' }}>
+            Admin <span style={{color:'var(--blue)'}}>Login</span>
+          </h2>
+          {loginError && (
+            <div style={{ background:'rgba(255,107,107,0.1)', border:'1px solid rgba(255,107,107,0.3)', color:'#ff6b6b',
+              padding:'10px 14px', borderRadius:4, marginBottom:16, fontSize:13, fontFamily:"'JetBrains Mono',monospace" }}>
+              ✗ {loginError}
+            </div>
+          )}
+          <div style={{ marginBottom:14 }}>
+            <label className="p-label">Admin Email</label>
+            <input type="email" value={loginEmail}
+              onChange={e=>setLoginEmail(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()}
+              placeholder="admin@eliteconsulting.co.ke" />
+          </div>
+          <div style={{ marginBottom:24 }}>
+            <label className="p-label">Password</label>
+            <input type="password" value={loginPassword}
+              onChange={e=>setLoginPassword(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()}
+              placeholder="••••••••" />
+          </div>
+          <button className="save-btn" style={{ width:'100%', padding:'13px 0', fontSize:14, letterSpacing:1 }}
+            onClick={doLogin} disabled={loginLoading}>
+            {loginLoading ? 'Signing in…' : 'Sign In →'}
+          </button>
+          <div style={{ color:'var(--dim)', fontSize:11, fontFamily:"'JetBrains Mono',monospace", textAlign:'center', marginTop:16 }}>
+            Use ADMIN_EMAIL + ADMIN_PASSWORD from Render env
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return (
     <div className="portal-loading">
@@ -265,8 +350,10 @@ export default function Admin() {
             </button>
           ))}
         </nav>
-        <button className="ps-enquire" style={{background:'rgba(255,107,107,0.15)',color:'#ff6b6b',border:'1px solid rgba(255,107,107,0.3)'}}
+        <button className="ps-enquire" style={{background:'rgba(0,212,255,0.1)',color:'var(--blue)',border:'1px solid rgba(0,212,255,0.2)'}}
           onClick={load}>↻ Refresh</button>
+        <button className="ps-enquire" style={{background:'rgba(255,107,107,0.1)',color:'#ff6b6b',border:'1px solid rgba(255,107,107,0.2)',marginTop:8}}
+          onClick={logout}>⎋ Log Out</button>
       </aside>
 
       {/* MAIN */}
@@ -280,7 +367,6 @@ export default function Admin() {
               <p>Real-time snapshot of your consulting platform.</p>
             </div>
 
-            {/* Stat cards */}
             <div className="admin-stat-cards">
               {[
                 { label:'Total Leads',    val: analytics.totals.leads,        color:'#f59e0b', icon:'✉' },
@@ -297,7 +383,6 @@ export default function Admin() {
               ))}
             </div>
 
-            {/* Leads by status */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:8}}>
               <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20}}>
                 <div className="p-block-title" style={{marginBottom:14}}>Leads by Status</div>
@@ -305,53 +390,28 @@ export default function Admin() {
                   <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                     <span style={{color: STATUS_COLORS[s.status] || '#dde8f5',fontFamily:'JetBrains Mono,monospace',fontSize:12,textTransform:'uppercase'}}>{s.status}</span>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:80,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
-                        <div style={{width:`${Math.min((s.c/analytics.totals.leads)*100,100)}%`,height:'100%',background: STATUS_COLORS[s.status]||'#dde8f5',borderRadius:3}} />
+                      <div style={{width:80,height:4,background:'rgba(255,255,255,0.06)',borderRadius:2}}>
+                        <div style={{width:`${Math.min(100,(s.c/Math.max(analytics.totals.leads,1))*100)}%`,height:'100%',background: STATUS_COLORS[s.status]||'#dde8f5',borderRadius:2}} />
                       </div>
                       <span style={{color:'var(--text)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
                     </div>
                   </div>
                 ))}
               </div>
-
               <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20}}>
-                <div className="p-block-title" style={{marginBottom:14}}>Lead Score</div>
+                <div className="p-block-title" style={{marginBottom:14}}>Leads by Score</div>
                 {analytics.by_score.map((s,i) => {
                   const sm = SCORE_META[s.score] || SCORE_META.warm;
                   return (
                     <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                       <span style={{color:sm.color,fontFamily:'JetBrains Mono,monospace',fontSize:12}}>{sm.label}</span>
-                      <div style={{display:'flex',alignItems:'center',gap:8}}>
-                        <div style={{width:80,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
-                          <div style={{width:`${Math.min((s.c/analytics.totals.leads)*100,100)}%`,height:'100%',background:sm.color,borderRadius:3}} />
-                        </div>
-                        <span style={{color:'var(--text)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
-                      </div>
+                      <span style={{color:'var(--text)',fontFamily:'JetBrains Mono,monospace',fontSize:12}}>{s.c}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Top services */}
-            {analytics.by_service.length > 0 && (
-              <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20,marginTop:16}}>
-                <div className="p-block-title" style={{marginBottom:14}}>Top Requested Services</div>
-                {analytics.by_service.map((s,i) => (
-                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                    <span style={{color:'var(--body)',fontSize:13}}>{s.service}</span>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:120,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
-                        <div style={{width:`${Math.min((s.c/analytics.by_service[0].c)*100,100)}%`,height:'100%',background:'linear-gradient(90deg,#00d4ff,#00ffb3)',borderRadius:3}} />
-                      </div>
-                      <span style={{color:'var(--blue)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Unread alerts */}
             {unread.total > 0 && (
               <div style={{background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.25)',borderRadius:6,padding:16,marginTop:16}}>
                 <div style={{color:'#f59e0b',fontFamily:'JetBrains Mono,monospace',fontSize:12,letterSpacing:2,marginBottom:10}}>⚠ ACTION REQUIRED</div>
@@ -365,6 +425,15 @@ export default function Admin() {
           </div>
         )}
 
+        {tab === 'dashboard' && !analytics && !loading && (
+          <div className="p-section fade-up">
+            <div className="p-heading"><h2>Dashboard <span className="p-hi">Overview</span></h2></div>
+            <div style={{color:'#ff6b6b',fontFamily:'JetBrains Mono,monospace',fontSize:13,padding:20,background:'rgba(255,107,107,0.08)',border:'1px solid rgba(255,107,107,0.2)',borderRadius:6}}>
+              ✗ Could not load analytics. Check backend logs on Render.
+            </div>
+          </div>
+        )}
+
         {/* ── LEADS ── */}
         {tab === 'leads' && (
           <div className="p-section fade-up">
@@ -373,7 +442,6 @@ export default function Admin() {
               <p>All enquiries with scoring, filtering, bulk actions, and CSV export.</p>
             </div>
 
-            {/* Toolbar */}
             <div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
               <input placeholder="Search name, email, service…" value={leadSearch}
                 onChange={e=>setLeadSearch(e.target.value)}
@@ -391,7 +459,6 @@ export default function Admin() {
               <button className="save-btn" onClick={exportCSV}>↓ Export CSV</button>
             </div>
 
-            {/* Bulk actions */}
             {selLeads.length > 0 && (
               <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:14,
                 background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.2)',
@@ -493,7 +560,6 @@ export default function Admin() {
               <p>Reply to client messages. Clients are notified by email on reply.</p>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'240px 1fr',gap:16,height:560}}>
-              {/* User list */}
               <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,overflow:'auto'}}>
                 {uniqueUsers.length === 0 && <div style={{padding:20,color:'var(--dim)',fontSize:13,textAlign:'center'}}>No messages yet</div>}
                 {uniqueUsers.map(u => {
@@ -516,7 +582,6 @@ export default function Admin() {
                 })}
               </div>
 
-              {/* Thread */}
               {selUser ? (
                 <div className="p-chat" style={{height:'100%'}}>
                   <div style={{padding:'12px 16px',borderBottom:'1px solid rgba(0,212,255,0.1)',background:'rgba(0,0,0,0.2)'}}>
@@ -557,6 +622,9 @@ export default function Admin() {
               <h2>Registered <span className="p-hi">Users</span></h2>
               <p>{users.length} registered clients on the platform.</p>
             </div>
+            {users.length === 0 ? (
+              <div className="p-empty"><div className="p-empty-icon">👥</div><h3>No registered users yet</h3></div>
+            ) : (
             <div style={{overflowX:'auto'}}>
               <table className="admin-table">
                 <thead>
@@ -589,6 +657,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
@@ -600,7 +669,6 @@ export default function Admin() {
               <p>Create and update client projects with phases and milestones.</p>
             </div>
 
-            {/* Project form */}
             <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
               <div className="p-block-title" style={{marginBottom:16}}>{pEdit ? 'Edit Project' : 'Create New Project'}</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
@@ -650,7 +718,6 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Milestone form */}
             <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
               <div className="p-block-title" style={{marginBottom:16}}>Add Milestone</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr auto',gap:14,alignItems:'end'}}>
@@ -672,7 +739,6 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Projects list — fetched per user from leads context */}
             <div className="p-block-title" style={{marginBottom:12}}>All Users with Projects</div>
             {users.map(u => (
               <div key={u.id} style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:16,marginBottom:10}}>
@@ -778,7 +844,6 @@ export default function Admin() {
               <p>Write and publish articles to the public blog.</p>
             </div>
 
-            {/* Blog form */}
             <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
               <div className="p-block-title" style={{marginBottom:16}}>{bEdit ? 'Edit Post' : 'New Post'}</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
@@ -817,7 +882,6 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Posts list */}
             <div className="p-list">
               {blogPosts.length === 0 && <div className="p-empty"><div className="p-empty-icon">📝</div><h3>No posts yet</h3></div>}
               {blogPosts.map(p => (
