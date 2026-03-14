@@ -1,899 +1,907 @@
-import { useState, useEffect, useRef } from 'react';
-import './App.css';
-import Admin from './Admin';
-import Portal from './Portal';
+import { useState, useEffect } from 'react';
 
-const API = 'https://consulting-backend-y19q.onrender.com';
+const API   = 'https://consulting-backend-y19q.onrender.com';
+const AKEY  = 'temporary_dev_key';
+const H     = { 'x-admin-key': AKEY, 'Content-Type': 'application/json' };
 
-function Counter({ target, suffix = '' }) {
-  const [n, setN] = useState(0);
-  const ref = useRef(null);
-  const done = useRef(false);
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting && !done.current) {
-        done.current = true;
-        const max = parseInt(target), step = Math.ceil(max / 50);
-        let c = 0;
-        const t = setInterval(() => { c = Math.min(c + step, max); setN(c); if (c >= max) clearInterval(t); }, 28);
-      }
-    });
-    if (ref.current) io.observe(ref.current);
-    return () => io.disconnect();
-  }, [target]);
-  return <span ref={ref}>{n}{suffix}</span>;
-}
+const SCORE_META = {
+  hot:  { color: '#ff6b6b', bg: 'rgba(255,107,107,0.12)', label: '🔥 Hot'  },
+  warm: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  label: '🟡 Warm' },
+  cold: { color: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  label: '❄️ Cold' },
+};
 
-function TypeWriter({ text, speed = 55 }) {
-  const [out, setOut] = useState('');
-  useEffect(() => {
-    setOut(''); let i = 0;
-    const t = setInterval(() => {
-      if (i < text.length) { setOut(text.slice(0, ++i)); } else clearInterval(t);
-    }, speed);
-    return () => clearInterval(t);
-  }, [text]);
-  return <span>{out}<span className="blink">|</span></span>;
-}
+const STATUS_COLORS = {
+  pending:   '#f59e0b',
+  reviewing: '#38bdf8',
+  responded: '#34d399',
+  closed:    '#94a3b8',
+};
 
-export default function App() {
-  const [page, setPage]       = useState('home');
-  const [auth, setAuth]       = useState(null);
-  const [pageKey, setKey]     = useState(0);
-  const [cForm, setCForm]     = useState({ name:'', email:'', service:'', message:'' });
-  const [cStatus, setCStatus] = useState('idle');
-  const [sMode, setSMode]     = useState('login');
-  const [sForm, setSForm]     = useState({ name:'', email:'', password:'', newsletter: false });
-  const [sErr, setSErr]       = useState('');
-  const [sOk, setSOk]         = useState('');
-  const [sBusy, setSBusy]     = useState(false);
-  const [resetToken, setResetToken] = useState('');
-  const [newPw, setNewPw]           = useState('');
-  const [resetMsg, setResetMsg]     = useState('');
-  const [resetBusy, setResetBusy]   = useState(false);
-  const [forgotEmail, setForgotEmail] = useState('');
-  const [newsletter, setNewsletter]   = useState('');
-  const [nlStatus, setNlStatus]       = useState('idle');
+export default function Admin() {
+  const [tab, setTab]               = useState('dashboard');
+  const [leads, setLeads]           = useState([]);
+  const [users, setUsers]           = useState([]);
+  const [messages, setMessages]     = useState([]);
+  const [projects, setProjects]     = useState([]);
+  const [appts, setAppts]           = useState([]);
+  const [analytics, setAnalytics]   = useState(null);
   const [testimonials, setTestimonials] = useState([]);
-  const [blog, setBlog]               = useState([]);
-  const [adminUnread, setAdminUnread] = useState(0);
+  const [blogPosts, setBlogPosts]   = useState([]);
+  const [newsletter, setNewsletter] = useState([]);
+  const [unread, setUnread]         = useState({ messages:0, leads:0, appointments:0, total:0 });
+  const [loading, setLoading]       = useState(true);
 
-  // Check for reset token in URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('reset_token');
-    if (token) { setResetToken(token); setPage('reset'); }
-  }, []);
+  // Lead management
+  const [selLead, setSelLead]       = useState(null);
+  const [leadStatus, setLeadStatus] = useState('');
+  const [leadResp, setLeadResp]     = useState('');
+  const [selLeads, setSelLeads]     = useState([]);
+  const [bulkStatus, setBulkStatus] = useState('reviewed');
 
-  // Load testimonials + blog on mount
-  useEffect(() => {
-    fetch(`${API}/api/testimonials`)
-      .then(r => r.ok ? r.json() : [])
-      .then(setTestimonials)
-      .catch(() => {});
-    fetch(`${API}/api/blog`)
-      .then(r => r.ok ? r.json() : [])
-      .then(setBlog)
-      .catch(() => {});
-  }, []);
+  // Messages
+  const [selUser, setSelUser]       = useState(null);
+  const [reply, setReply]           = useState('');
+  const [replySending, setReplySending] = useState(false);
 
-  // Admin unread badge polling
-  useEffect(() => {
-    if (auth?.role !== 'admin') return;
-    const poll = async () => {
-      try {
-        const r = await fetch(`${API}/api/admin/unread`, {
-          headers: { 'x-admin-key': 'temporary_dev_key' }
-        });
-        if (r.ok) { const d = await r.json(); setAdminUnread(d.total); }
-      } catch {}
-    };
-    poll();
-    const t = setInterval(poll, 15000);
-    return () => clearInterval(t);
-  }, [auth]);
+  // Projects
+  const [pForm, setPForm]           = useState({ user_id:'', title:'', description:'', status:'in_progress', progress:0, phase:'Discovery' });
+  const [pEdit, setPEdit]           = useState(null);
+  const [mForm, setMForm]           = useState({ project_id:'', title:'', phase:'Discovery', due_date:'' });
 
-  const go = (p) => { setPage(p); setKey(k=>k+1); window.scrollTo(0,0); };
+  // Blog
+  const [bForm, setBForm]           = useState({ title:'', slug:'', excerpt:'', content:'', tags:'', published: false });
+  const [bEdit, setBEdit]           = useState(null);
 
-  const submitContact = async (e) => {
-    e.preventDefault(); setCStatus('loading');
+  // Testimonials
+  // Documents
+  const [docForm, setDocForm]       = useState({ user_id:'', title:'', doc_type:'general' });
+  const [docFile, setDocFile]       = useState(null);
+
+  // Search / filter
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadFilter, setLeadFilter] = useState('all');
+
+  const load = async () => {
+    setLoading(true);
     try {
-      const h = { 'Content-Type':'application/json' };
-      if (auth?.token) h['Authorization'] = `Bearer ${auth.token}`;
-      const res = await fetch(`${API}/api/contact`, {
-        method:'POST', headers:h, body:JSON.stringify(cForm)
-      });
-      if (!res.ok) throw new Error();
-      setCStatus('success');
-      setCForm({ name:'', email:'', service:'', message:'' });
-    } catch { setCStatus('error'); }
+      const [lR, uR, mR, aR, apR, anR, tR, bR, nR, urR] = await Promise.all([
+        fetch(`${API}/api/admin/leads`,        { headers: H }),
+        fetch(`${API}/api/admin/users`,        { headers: H }),
+        fetch(`${API}/api/admin/messages`,     { headers: H }),
+        fetch(`${API}/api/admin/appointments`, { headers: H }),
+        fetch(`${API}/api/admin/analytics`,    { headers: H }),
+        fetch(`${API}/api/admin/testimonials`, { headers: H }),
+        fetch(`${API}/api/admin/blog`,         { headers: H }),
+        fetch(`${API}/api/admin/newsletter`,   { headers: H }),
+        fetch(`${API}/api/admin/unread`,       { headers: H }),
+        // projects per user fetched separately below
+        fetch(`${API}/api/admin/leads`,        { headers: H }), // placeholder
+      ]);
+      if (lR.ok)  setLeads(await lR.json());
+      if (uR.ok)  setUsers(await uR.json());
+      if (mR.ok)  setMessages(await mR.json());
+      if (aR.ok)  setAppts(await aR.json());
+      if (apR.ok) setAnalytics(await apR.json());
+      if (anR.ok) setTestimonials(await anR.json());
+      if (tR.ok)  setBlogPosts(await tR.json());
+      if (bR.ok)  setNewsletter(await bR.json());
+      if (nR.ok)  setUnread(await nR.json());
+    } catch(e) { console.error(e); }
+    setLoading(false);
   };
 
-  const submitSignIn = async (e) => {
-    e.preventDefault(); setSBusy(true); setSErr(''); setSOk('');
-    try {
-      if (sMode === 'register') {
-        const res = await fetch(`${API}/api/auth/register`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            name: sForm.name, email: sForm.email,
-            password: sForm.password, newsletter: sForm.newsletter
-          }),
-        });
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.detail || 'Registration failed');
-        setSOk('Account created! Check your email, then sign in.');
-        setSMode('login');
-        setSForm({ name:'', email:sForm.email, password:'', newsletter: false });
-        return;
-      }
-      if (sMode === 'forgot') {
-        await fetch(`${API}/api/auth/forgot-password`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ email: forgotEmail }),
-        });
-        setSOk('If that email exists, a reset link has been sent. Check your inbox.');
-        setSMode('login');
-        return;
-      }
-      // Try admin first, then user
-      let result = null;
-      const aRes = await fetch(`${API}/api/auth/login`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({...sForm, role:'admin'}),
-      });
-      if (aRes.ok) {
-        result = await aRes.json();
-      } else {
-        const uRes = await fetch(`${API}/api/auth/login`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({...sForm, role:'user'}),
-        });
-        const d = await uRes.json();
-        if (!uRes.ok) throw new Error(d.detail || 'Incorrect email or password');
-        result = d;
-      }
-      setAuth({ token:result.token, role:result.role, name:result.name });
-      go(result.role === 'admin' ? 'admin' : 'portal');
-    } catch(err) { setSErr(err.message); }
-    finally { setSBusy(false); }
+  useEffect(() => { load(); }, []);
+
+  // ── LEADS ─────────────────────────────────────────────────
+  const saveLead = async (id) => {
+    await fetch(`${API}/api/admin/leads/${id}`, {
+      method:'PUT', headers:H,
+      body: JSON.stringify({ status: leadStatus, admin_response: leadResp }),
+    });
+    setSelLead(null); load();
   };
 
-  const submitReset = async (e) => {
-    e.preventDefault(); setResetBusy(true); setResetMsg('');
-    try {
-      const res = await fetch(`${API}/api/auth/reset-password`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token: resetToken, new_password: newPw }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.detail);
-      setResetMsg('Password updated! You can now sign in.');
-      setTimeout(() => { window.history.replaceState({}, '', '/'); go('signin'); }, 2000);
-    } catch(e) { setResetMsg(e.message); }
-    setResetBusy(false);
+  const deleteLead = async (id) => {
+    if (!confirm('Delete this lead?')) return;
+    await fetch(`${API}/api/admin/leads/${id}`, { method:'DELETE', headers:H });
+    load();
   };
 
-  const subscribeNewsletter = async (e) => {
-    e.preventDefault(); setNlStatus('loading');
-    try {
-      const res = await fetch(`${API}/api/newsletter`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ email: newsletter }),
-      });
-      if (!res.ok) throw new Error();
-      setNlStatus('success'); setNewsletter('');
-    } catch { setNlStatus('error'); }
+  const bulkUpdate = async () => {
+    if (!selLeads.length) return;
+    await fetch(`${API}/api/admin/leads/bulk`, {
+      method:'POST', headers:H,
+      body: JSON.stringify({ ids: selLeads, status: bulkStatus }),
+    });
+    setSelLeads([]); load();
   };
 
-  const logout = () => { setAuth(null); go('home'); };
+  const exportCSV = () => {
+    window.open(`${API}/api/admin/leads/export?x-admin-key=${AKEY}`, '_blank');
+  };
 
-  const Nav = () => (
-    <nav className="nav">
-      <div className="nav-logo" onClick={() => go('home')}>
-        ELITE <span className="neon">CONSULTING</span>
-      </div>
-      <div className="nav-links">
-        {['home','about','services','projects','blog','contact'].map(p => (
-          <button key={p} onClick={() => go(p)}
-            className={page===p?'nav-active':''}>
-            {p.charAt(0).toUpperCase()+p.slice(1)}
-          </button>
-        ))}
-        {auth ? (
-          <>
-            {auth.role==='user' && (
-              <button className="nav-portal" onClick={() => go('portal')}>My Portal</button>
-            )}
-            {auth.role==='admin' && (
-              <button className="nav-admin" onClick={() => go('admin')} style={{position:'relative'}}>
-                Admin
-                {adminUnread > 0 && (
-                  <span className="nav-unread-badge">{adminUnread}</span>
-                )}
-              </button>
-            )}
-            <span className="nav-user">👤 {auth.name}</span>
-            <button className="nav-out" onClick={logout}>Sign Out</button>
-          </>
-        ) : (
-          <button className="nav-cta" onClick={() => go('signin')}>Sign In</button>
-        )}
-      </div>
-    </nav>
-  );
+  const toggleSelLead = (id) => {
+    setSelLeads(p => p.includes(id) ? p.filter(x=>x!==id) : [...p, id]);
+  };
 
-  // ── PASSWORD RESET PAGE ──────────────────────────────────────
-  if (page === 'reset') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <div className="signin-wrap">
-        <div className="signin-box fade-up">
-          <div className="signin-top">
-            <div className="signin-mark">EC</div>
-            <h2 className="neon">RESET PASSWORD</h2>
-          </div>
-          <form onSubmit={submitReset} className="signin-form">
-            <input type="password" placeholder="New Password" required minLength={8}
-              value={newPw} onChange={e => setNewPw(e.target.value)} />
-            {resetMsg && (
-              <div className={resetMsg.includes('updated') ? 'form-success' : 'form-error'}>
-                {resetMsg}
-              </div>
-            )}
-            <button type="submit" className="btn-neon" disabled={resetBusy}>
-              {resetBusy ? 'Updating…' : 'Set New Password'}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+  const filteredLeads = leads.filter(l => {
+    const matchSearch = !leadSearch ||
+      l.name?.toLowerCase().includes(leadSearch.toLowerCase()) ||
+      l.email?.toLowerCase().includes(leadSearch.toLowerCase()) ||
+      l.service?.toLowerCase().includes(leadSearch.toLowerCase());
+    const matchFilter = leadFilter === 'all' || l.status === leadFilter || l.score === leadFilter;
+    return matchSearch && matchFilter;
+  });
 
-  // ── HOME ─────────────────────────────────────────────────────
-  if (page === 'home') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <header className="hero">
-        <div className="grid-bg" />
-        <div className="particles">
-          {[...Array(20)].map((_,i)=><div key={i} className="particle" style={{'--i':i}} />)}
-        </div>
-        <div className="hero-body fade-up">
-          <div className="chip"><span className="chip-dot" />NAIROBI'S PREMIER TECH CONSULTANCY</div>
-          <h1>ARCHITECTING <span className="grad glitch" data-text="DIGITAL FUTURES">DIGITAL FUTURES</span></h1>
-          <p className="hero-sub">
-            We deploy AI, Blockchain, and Cloud Infrastructure<br/>
-            for enterprises ready to lead tomorrow.
-          </p>
-          <div className="hero-btns">
-            <button className="btn-primary" onClick={() => go('services')}>Explore Services <span>→</span></button>
-            <button className="btn-outline" onClick={() => go('contact')}>Start a Project</button>
-          </div>
-          <div className="ticker">
-            <span className="ticker-live">● LIVE</span>
-            <span className="ticker-text">Systems Operational · 3 Active Deployments · Accepting New Projects</span>
-          </div>
-        </div>
-      </header>
+  // ── MESSAGES ──────────────────────────────────────────────
+  const uniqueUsers = [...new Map(messages.map(m => [m.user_id, { id: m.user_id, name: m.user_name, email: m.user_email }])).values()];
+  const threadMsgs  = selUser ? messages.filter(m => m.user_id === selUser.id) : [];
 
-      <section className="stats-row">
-        {[
-          {n:'50',s:'+',l:'Projects Delivered'},
-          {n:'98',s:'%',l:'Client Satisfaction'},
-          {n:'12',s:'', l:'Enterprise Partners'},
-          {n:'5', s:'yr',l:'Industry Experience'}
-        ].map((x,i)=>(
-          <div key={i} className="stat fade-up" style={{animationDelay:`${i*0.1}s`}}>
-            <span className="stat-n"><Counter target={x.n} suffix={x.s} /></span>
-            <span className="stat-l">{x.l}</span>
-          </div>
-        ))}
-      </section>
+  const sendReply = async () => {
+    if (!reply.trim() || !selUser) return;
+    setReplySending(true);
+    await fetch(`${API}/api/admin/messages/reply`, {
+      method:'POST', headers:H,
+      body: JSON.stringify({ content: reply, user_id: selUser.id }),
+    });
+    setReply(''); setReplySending(false); load();
+  };
 
-      <section className="section">
-        <p className="eyebrow">WHAT WE BUILD</p>
-        <h2 className="sec-title">Core Services</h2>
-        <div className="cards-3">
-          {[
-            {icon:'🤖',t:'AI Integration',d:'LLMs, decision engines, and automated data pipelines built for real business outcomes.'},
-            {icon:'⛓️',t:'Web3 Systems',  d:'Secure smart contracts, tokenomics architecture, and full dApp development.'},
-            {icon:'☁️',t:'Cloud Infra',   d:'Migration strategies and scalable infrastructure that cuts costs dramatically.'},
-          ].map((c,i)=>(
-            <div key={i} className="card card-reveal" style={{animationDelay:`${i*0.15}s`}}>
-              <span className="card-icon">{c.icon}</span>
-              <h3>{c.t}</h3><p>{c.d}</p>
-            </div>
-          ))}
-        </div>
-        <div className="sec-cta">
-          <button className="btn-primary" onClick={() => go('services')}>View All Services →</button>
-        </div>
-      </section>
+  // ── PROJECTS ──────────────────────────────────────────────
+  const saveProject = async () => {
+    if (pEdit) {
+      await fetch(`${API}/api/admin/projects/${pEdit}?title=${encodeURIComponent(pForm.title)}&description=${encodeURIComponent(pForm.description)}&status=${pForm.status}&progress=${pForm.progress}&phase=${pForm.phase}`, { method:'PUT', headers:H });
+      setPEdit(null);
+    } else {
+      await fetch(`${API}/api/admin/projects?user_id=${pForm.user_id}&title=${encodeURIComponent(pForm.title)}&description=${encodeURIComponent(pForm.description)}&status=${pForm.status}&progress=${pForm.progress}&phase=${pForm.phase}`, { method:'POST', headers:H });
+    }
+    setPForm({ user_id:'', title:'', description:'', status:'in_progress', progress:0, phase:'Discovery' });
+    load();
+  };
 
-      {/* TESTIMONIALS — only shows when approved ones exist in DB */}
-      {testimonials.length > 0 && (
-        <section className="section" style={{paddingTop:0}}>
-          <p className="eyebrow">WHAT CLIENTS SAY</p>
-          <h2 className="sec-title">Testimonials</h2>
-          <div className="cards-3">
-            {testimonials.slice(0,3).map((t,i) => (
-              <div key={i} className="card card-reveal" style={{animationDelay:`${i*0.15}s`}}>
-                <div style={{color:'#f59e0b',fontSize:18,marginBottom:12}}>
-                  {'★'.repeat(t.rating)}
-                </div>
-                <p style={{color:'var(--body)',fontStyle:'italic',marginBottom:16}}>
-                  "{t.content}"
-                </p>
-                <div style={{borderTop:'1px solid rgba(0,212,255,0.1)',paddingTop:12}}>
-                  <div style={{color:'var(--text)',fontWeight:700}}>{t.client_name}</div>
-                  {t.role && (
-                    <div className="p-date">{t.role}{t.company ? `, ${t.company}` : ''}</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+  const deleteProject = async (id) => {
+    if (!confirm('Delete project?')) return;
+    await fetch(`${API}/api/admin/projects/${id}`, { method:'DELETE', headers:H });
+    load();
+  };
 
-      {/* BLOG PREVIEW — only shows when published posts exist */}
-      {blog.length > 0 && (
-        <section className="section" style={{paddingTop:0}}>
-          <p className="eyebrow">INSIGHTS</p>
-          <h2 className="sec-title">Latest from Our Blog</h2>
-          <div className="cards-3">
-            {blog.slice(0,3).map((post,i) => (
-              <div key={i} className="card card-reveal"
-                style={{animationDelay:`${i*0.15}s`,cursor:'pointer'}}
-                onClick={() => go(`blog-${post.slug}`)}>
-                {post.tags && (
-                  <span className="tag" style={{marginBottom:12,display:'block'}}>
-                    {post.tags.split(',')[0]}
-                  </span>
-                )}
-                <h3 style={{color:'var(--text)',textShadow:'none',marginBottom:10}}>{post.title}</h3>
-                <p>{post.excerpt}</p>
-                <span style={{color:'var(--blue)',fontSize:13,marginTop:12,display:'block'}}>
-                  Read more →
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="sec-cta">
-            <button className="btn-outline" onClick={() => go('blog')}>View All Posts →</button>
-          </div>
-        </section>
-      )}
+  const addMilestone = async () => {
+    await fetch(`${API}/api/admin/milestones`, {
+      method:'POST', headers:H, body: JSON.stringify(mForm),
+    });
+    setMForm({ project_id:'', title:'', phase:'Discovery', due_date:'' });
+    load();
+  };
 
-      {/* PORTAL CALLOUT */}
-      <section className="portal-callout">
-        <div className="portal-callout-inner">
-          <div>
-            <p className="eyebrow">CLIENT PORTAL</p>
-            <h2 className="sec-title" style={{marginBottom:14}}>Track Your Projects</h2>
-            <p style={{color:'var(--dim)',lineHeight:1.8,marginBottom:28,fontSize:15}}>
-              Registered clients get a personal dashboard — track enquiries, monitor project
-              progress, access exclusive resources, and message our team directly.
-            </p>
-            <button className="btn-primary" onClick={() => go(auth ? 'portal' : 'signin')}>
-              {auth ? 'Open My Portal →' : 'Sign In to Portal →'}
-            </button>
-          </div>
-          <div className="callout-features">
-            {[
-              '✉ View enquiry status & responses',
-              '◎ Track project milestones & progress',
-              '✦ Message the team directly',
-              '📅 Book consultation calls',
-              '📄 Access documents & proposals',
-              '◯ Manage your profile & password',
-            ].map((f,i)=>(
-              <div key={i} className="callout-row" style={{animationDelay:`${i*0.1}s`}}>
-                <span className="callout-check">✓</span><span>{f}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+  // ── BLOG ──────────────────────────────────────────────────
+  const saveBlog = async () => {
+    if (bEdit) {
+      await fetch(`${API}/api/admin/blog/${bEdit}`, { method:'PUT', headers:H, body: JSON.stringify(bForm) });
+      setBEdit(null);
+    } else {
+      await fetch(`${API}/api/admin/blog`, { method:'POST', headers:H, body: JSON.stringify(bForm) });
+    }
+    setBForm({ title:'', slug:'', excerpt:'', content:'', tags:'', published: false });
+    load();
+  };
 
-      {/* NEWSLETTER */}
-      <section className="newsletter-band">
-        <div className="nl-inner fade-up">
-          <p className="eyebrow" style={{textAlign:'center'}}>STAY INFORMED</p>
-          <h2>Get Tech Insights in Your Inbox</h2>
-          <p>Join 500+ leaders receiving our monthly deep-dives on AI, Web3, and cloud strategy.</p>
-          {nlStatus === 'success' ? (
-            <div className="form-success" style={{maxWidth:420,margin:'0 auto'}}>
-              ✓ You're subscribed! Welcome aboard.
-            </div>
-          ) : (
-            <form onSubmit={subscribeNewsletter} className="nl-form">
-              <input type="email" placeholder="your@email.com" required
-                value={newsletter} onChange={e => setNewsletter(e.target.value)}
-                className="nl-input" />
-              <button type="submit" className="btn-primary" disabled={nlStatus==='loading'}>
-                {nlStatus==='loading' ? 'Subscribing…' : 'Subscribe →'}
-              </button>
-            </form>
-          )}
-        </div>
-      </section>
+  const deleteBlog = async (id) => {
+    if (!confirm('Delete post?')) return;
+    await fetch(`${API}/api/admin/blog/${id}`, { method:'DELETE', headers:H });
+    load();
+  };
 
-      <section className="cta-band">
-        <div className="grid-bg" style={{opacity:0.2}} />
-        <div className="cta-inner fade-up">
-          <p className="eyebrow" style={{textAlign:'center'}}>NEXT STEP</p>
-          <h2>Ready to build something extraordinary?</h2>
-          <p>Our team of engineers is available for new engagements.</p>
-          <button className="btn-primary" onClick={() => go('contact')}>Get In Touch</button>
-        </div>
-      </section>
-    </div>
-  );
+  // ── TESTIMONIALS ──────────────────────────────────────────
+  const approveTestimonial = async (id, approved) => {
+    await fetch(`${API}/api/admin/testimonials/${id}?approved=${approved}`, { method:'PUT', headers:H });
+    load();
+  };
 
-  // ── ABOUT ────────────────────────────────────────────────────
-  if (page === 'about') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <section className="page-hero">
-        <div className="grid-bg" style={{opacity:0.2}} />
-        <div className="page-hero-body fade-up">
-          <div className="chip"><span className="chip-dot" />WHO WE ARE</div>
-          <h1>Deep Tech. <span className="grad">Real Results.</span></h1>
-          <p>A boutique team of engineers in Nairobi solving the hardest problems in software.</p>
-        </div>
-      </section>
-      <section className="section">
-        <h2 className="sec-title">Our Mission</h2>
-        <p style={{color:'var(--dim)',fontSize:17,lineHeight:1.85,maxWidth:760}}>
-          We exist to give African enterprises access to the same calibre of technology that
-          powers Silicon Valley's most sophisticated companies. Every system we build is
-          engineered for performance, security, and longevity — not just to demo well.
-        </p>
-      </section>
-      <section className="section" style={{paddingTop:0}}>
-        <p className="eyebrow">HOW WE WORK</p>
-        <h2 className="sec-title">Our Values</h2>
-        <div className="cards-4">
-          {[
-            {icon:'⚡',t:'Speed Without Shortcuts',d:'We ship fast without accumulating technical debt.'},
-            {icon:'🔐',t:'Security First',         d:'Every architecture decision considers security from day one.'},
-            {icon:'📊',t:'Data-Driven',            d:'Every recommendation is backed by numbers, not opinions.'},
-            {icon:'🌍',t:'Built for Africa',       d:'We design systems that work within local infrastructure constraints.'},
-          ].map((v,i)=>(
-            <div key={i} className="card card-reveal" style={{animationDelay:`${i*0.12}s`}}>
-              <span className="card-icon">{v.icon}</span><h3>{v.t}</h3><p>{v.d}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="section" style={{paddingTop:0}}>
-        <p className="eyebrow">THE TEAM</p>
-        <h2 className="sec-title">Leadership</h2>
-        <div className="cards-3">
-          {[
-            {av:'👨‍💻',n:'Founder & CTO',          r:'Systems Architecture',d:'10 years building distributed systems for financial institutions across East Africa.'},
-            {av:'👩‍🔬',n:'Head of AI',             r:'Machine Learning',    d:'MSc Applied Mathematics. Specialises in LLM fine-tuning and production ML pipelines.'},
-            {av:'👨‍💼',n:'Head of Client Success',  r:'Strategy & Delivery', d:'Ensures every engagement exceeds its KPIs. Former Big 4 strategy consultant.'},
-          ].map((t,i)=>(
-            <div key={i} className="card team-card card-reveal"
-              style={{animationDelay:`${i*0.15}s`,textAlign:'center'}}>
-              <div style={{fontSize:44,marginBottom:14}}>{t.av}</div>
-              <h3>{t.n}</h3>
-              <span className="team-role">{t.r}</span>
-              <p>{t.d}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+  const deleteTestimonial = async (id) => {
+    if (!confirm('Delete testimonial?')) return;
+    await fetch(`${API}/api/admin/testimonials/${id}`, { method:'DELETE', headers:H });
+    load();
+  };
 
-  // ── SERVICES ─────────────────────────────────────────────────
-  if (page === 'services') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <section className="page-hero">
-        <div className="grid-bg" style={{opacity:0.2}} />
-        <div className="page-hero-body fade-up">
-          <div className="chip"><span className="chip-dot" />WHAT WE DO</div>
-          <h1>Core <span className="grad">Competencies</span></h1>
-          <p>Six specialised practice areas built from real enterprise engagements.</p>
-        </div>
-      </section>
-      <section className="section">
-        <div className="cards-2">
-          {[
-            {icon:'🤖',t:'AI & Machine Learning',   d:'Custom LLM deployments, fine-tuning on proprietary data, AI agents, and automated decision systems integrated directly into your business processes.'},
-            {icon:'⛓️',t:'Blockchain & Web3',        d:'Smart contract architecture, tokenomics design, DeFi protocol development, and NFT infrastructure. Audited code, production-ready.'},
-            {icon:'☁️',t:'Cloud Migration & DevOps', d:'Move from legacy infrastructure to modern cloud with zero downtime. CI/CD pipelines, Kubernetes orchestration, and cost optimisation.'},
-            {icon:'🔐',t:'Cybersecurity',             d:'Zero-trust architecture, penetration testing, cryptographic protocol design, and compliance frameworks (ISO 27001, SOC 2).'},
-            {icon:'📊',t:'Data Engineering',          d:'Real-time data pipelines, warehouses, and dashboards that turn raw data into revenue-generating insights.'},
-            {icon:'🏗️',t:'System Architecture',      d:'Design distributed systems that scale to millions of users. Performance reviews, bottleneck elimination, and technical roadmapping.'},
-          ].map((s,i)=>(
-            <div key={i} className="card service-card card-reveal" style={{animationDelay:`${i*0.1}s`}}>
-              <span className="card-icon">{s.icon}</span>
-              <h3>{s.t}</h3><p>{s.d}</p>
-              <button className="btn-ghost" onClick={() => go('contact')}>Enquire →</button>
-            </div>
-          ))}
-        </div>
-      </section>
+  // ── APPOINTMENTS ──────────────────────────────────────────
+  const updateAppt = async (id, status) => {
+    await fetch(`${API}/api/admin/appointments/${id}?status=${status}`, { method:'PUT', headers:H });
+    load();
+  };
 
-      {/* PRICING */}
-      <section className="section" style={{paddingTop:0}}>
-        <p className="eyebrow">INVESTMENT</p>
-        <h2 className="sec-title">Service Packages</h2>
-        <div className="cards-3">
-          {[
-            {
-              tier:'Starter', price:'From $2,500', color:'#38bdf8',
-              features:['1 service area','Up to 3 months','Weekly updates','Email support','Basic portal access']
-            },
-            {
-              tier:'Growth', price:'From $8,000', color:'#00d4ff', featured: true,
-              features:['2–3 service areas','3–6 months','Dedicated PM','Priority support','Full portal + docs','Milestone tracking']
-            },
-            {
-              tier:'Enterprise', price:'Custom', color:'#34d399',
-              features:['Unlimited scope','12+ months','Embedded team','24/7 support','Full portal suite','SLA guarantee']
-            },
-          ].map((p,i)=>(
-            <div key={i}
-              className={`card card-reveal pricing-card${p.featured?' pricing-featured':''}`}
-              style={{animationDelay:`${i*0.15}s`}}>
-              {p.featured && <div className="pricing-badge">MOST POPULAR</div>}
-              <h3 style={{color:p.color}}>{p.tier}</h3>
-              <div className="pricing-price">{p.price}</div>
-              <div className="pricing-features">
-                {p.features.map((f,j) => (
-                  <div key={j} className="pricing-row">
-                    <span style={{color:'#34d399'}}>✓</span> {f}
-                  </div>
-                ))}
-              </div>
-              <button className="btn-primary"
-                style={{marginTop:20,width:'100%',background:p.color}}
-                onClick={() => go('contact')}>
-                Get Started →
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+  // ── DOCUMENTS ─────────────────────────────────────────────
+  const uploadDoc = async () => {
+    if (!docFile || !docForm.user_id || !docForm.title) return alert('Fill all fields and select a file.');
+    const fd = new FormData();
+    fd.append('user_id', docForm.user_id);
+    fd.append('title', docForm.title);
+    fd.append('doc_type', docForm.doc_type);
+    fd.append('file', docFile);
+    await fetch(`${API}/api/admin/documents`, {
+      method:'POST', headers:{ 'x-admin-key': AKEY }, body: fd,
+    });
+    setDocForm({ user_id:'', title:'', doc_type:'general' }); setDocFile(null); load();
+  };
 
-  // ── PROJECTS ─────────────────────────────────────────────────
-  if (page === 'projects') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <section className="page-hero">
-        <div className="grid-bg" style={{opacity:0.2}} />
-        <div className="page-hero-body fade-up">
-          <div className="chip"><span className="chip-dot" />OUR WORK</div>
-          <h1>Active <span className="grad">Projects</span></h1>
-          <p>Proven results across AI, fintech, systems, and security engineering.</p>
-        </div>
-      </section>
-      <section className="section">
-        <div className="proj-grid">
-          {[
-            {tag:'AI · FINTECH',       name:'NeuralBroker',status:'LIVE',        col:'#38bdf8',year:'2025',
-             metrics:['40% latency reduction','$2M trades processed','99.9% uptime'],
-             desc:'Custom AI trading agents that reduced financial processing latency by 40% for a major East African brokerage.',
-             tech:['Python','FastAPI','TensorFlow','Redis','PostgreSQL']},
-            {tag:'SYSTEMS · RETAIL',   name:'TitanStack',  status:'LIVE',        col:'#38bdf8',year:'2025',
-             metrics:['100k concurrent users','300% performance gain','0 downtime migration'],
-             desc:'Rebuilt a legacy retail management system to distributed microservices handling 100k concurrent users.',
-             tech:['Node.js','Kubernetes','AWS','React','MongoDB']},
-            {tag:'SECURITY · FINTECH', name:'VaultNet',    status:'IN PROGRESS', col:'#f59e0b',year:'2026',
-             metrics:['ISO 27001 target','Zero-trust model','Real-time threat detection'],
-             desc:'End-to-end zero-trust security architecture for a Nairobi-based financial institution.',
-             tech:['Rust','OpenSSL','Terraform','Datadog','Vault']},
-            {tag:'WEB3 · DEFI',        name:'ChainBridge', status:'IN PROGRESS', col:'#f59e0b',year:'2026',
-             metrics:['Multi-chain support','Audited contracts','$500k TVL target'],
-             desc:'Cross-chain DeFi bridge enabling asset transfers between Ethereum, BSC, and Polygon.',
-             tech:['Solidity','Hardhat','ethers.js','React','The Graph']},
-            {tag:'DATA · LOGISTICS',   name:'FlowSight',   status:'COMPLETED',   col:'#94a3b8',year:'2024',
-             metrics:['15% cost reduction','Real-time dashboards','50+ data sources'],
-             desc:'Real-time supply chain analytics platform consolidating data from 50+ sources.',
-             tech:['Apache Kafka','dbt','Snowflake','Metabase','Python']},
-            {tag:'AI · HEALTHTECH',    name:'MediScan',    status:'COMPLETED',   col:'#94a3b8',year:'2024',
-             metrics:['92% accuracy','10k scans processed','CE Mark compliant'],
-             desc:'AI diagnostic tool for early detection of malaria from blood smear images. Deployed at 3 clinics.',
-             tech:['PyTorch','FastAPI','Docker','PostgreSQL','Next.js']},
-          ].map((p,i)=>(
-            <div key={i} className="card proj-card card-reveal" style={{animationDelay:`${i*0.1}s`}}>
-              <div className="proj-top">
-                <div>
-                  <span className="tag">{p.tag}</span>
-                  <span className="proj-year">{p.year}</span>
-                </div>
-                <span className="status-pill" style={{color:p.col}}>● {p.status}</span>
-              </div>
-              <h3 className="proj-name">{p.name}</h3>
-              <p className="proj-desc">{p.desc}</p>
-              <div className="metrics">
-                {p.metrics.map((m,j)=><span key={j} className="metric">✓ {m}</span>)}
-              </div>
-              <div className="techs">
-                {p.tech.map((t,j)=><span key={j} className="tech-tag">{t}</span>)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-
-  // ── BLOG LIST ────────────────────────────────────────────────
-  if (page === 'blog') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <section className="page-hero">
-        <div className="grid-bg" style={{opacity:0.2}} />
-        <div className="page-hero-body fade-up">
-          <div className="chip"><span className="chip-dot" />INSIGHTS</div>
-          <h1>Our <span className="grad">Blog</span></h1>
-          <p>Deep dives on AI, Web3, cloud strategy, and building in Africa.</p>
-        </div>
-      </section>
-      <section className="section">
-        {blog.length === 0 ? (
-          <div style={{textAlign:'center',padding:'60px 0',color:'var(--dim)'}}>
-            No posts yet — check back soon.
-          </div>
-        ) : (
-          <div className="cards-3">
-            {blog.map((post,i) => (
-              <div key={i} className="card card-reveal"
-                style={{animationDelay:`${i*0.1}s`,cursor:'pointer'}}
-                onClick={() => go(`blog-${post.slug}`)}>
-                {post.tags && (
-                  <span className="tag" style={{marginBottom:12,display:'block'}}>
-                    {post.tags.split(',')[0]}
-                  </span>
-                )}
-                <h3 style={{color:'var(--text)',textShadow:'none',marginBottom:10}}>{post.title}</h3>
-                <p>{post.excerpt}</p>
-                <div style={{display:'flex',justifyContent:'space-between',marginTop:16,alignItems:'center'}}>
-                  <span className="p-date">{new Date(post.created_at).toLocaleDateString('en-GB')}</span>
-                  <span style={{color:'var(--blue)',fontSize:13}}>Read more →</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-
-  // ── BLOG POST ────────────────────────────────────────────────
-  if (page.startsWith('blog-')) {
-    const slug = page.replace('blog-', '');
-    return <BlogPost slug={slug} go={go} Nav={Nav} />;
-  }
-
-  // ── CONTACT ──────────────────────────────────────────────────
-  if (page === 'contact') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <div className="contact-layout">
-        <div className="contact-left fade-up">
-          <div className="chip"><span className="chip-dot" />GET IN TOUCH</div>
-          <h2>Start Your <span className="grad">Project</span></h2>
-          <p style={{color:'var(--dim)',lineHeight:1.7,marginBottom:36}}>
-            Fill in the form and an architect will respond within 24 hours.
-          </p>
-          {[
-            {i:'📍',t:'Nairobi, Kenya'},
-            {i:'📧',t:'hello@eliteconsulting.co.ke'},
-            {i:'📞',t:'+254 700 000 000'},
-            {i:'🕐',t:'Mon–Fri, 8am–6pm EAT'},
-          ].map((x,j)=>(
-            <div key={j} className="contact-info-row"><span>{x.i}</span><span>{x.t}</span></div>
-          ))}
-        </div>
-        <div className="contact-right">
-          {cStatus === 'success' ? (
-            <div className="success-box fade-up">
-              <div style={{fontSize:48,marginBottom:16}}>✅</div>
-              <h3>Transmission Received</h3>
-              <p>Our architects will contact you within 24 hours.</p>
-              {auth && <p style={{color:'var(--blue)',fontSize:14}}>Track this in your Client Portal.</p>}
-              <button className="btn-primary" style={{marginTop:24}}
-                onClick={() => { setCStatus('idle'); go(auth?'portal':'home'); }}>
-                {auth ? 'Go to Portal' : 'Return Home'}
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={submitContact} className="contact-form fade-up">
-              <h3 className="form-title">SEND ENQUIRY</h3>
-              {cStatus==='error' && (
-                <div className="form-error">Server warming up — try again in 30 seconds.</div>
-              )}
-              <input placeholder="Full Name" required
-                value={cForm.name} onChange={e=>setCForm({...cForm,name:e.target.value})} />
-              <input type="email" placeholder="Email Address" required
-                value={cForm.email} onChange={e=>setCForm({...cForm,email:e.target.value})} />
-              <select value={cForm.service} onChange={e=>setCForm({...cForm,service:e.target.value})}>
-                <option value="">Select a Service (Optional)</option>
-                {['AI & Machine Learning','Blockchain & Web3','Cloud Migration & DevOps',
-                  'Cybersecurity','Data Engineering','System Architecture'].map(s=>(
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-              <textarea placeholder="Describe your project or challenge…" required rows={5}
-                value={cForm.message} onChange={e=>setCForm({...cForm,message:e.target.value})} />
-              <button type="submit" className="btn-neon" disabled={cStatus==='loading'}>
-                {cStatus==='loading' ? 'Transmitting…' : 'Send Enquiry'}
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── SIGN IN ──────────────────────────────────────────────────
-  if (page === 'signin') return (
-    <div className="app" key={pageKey}>
-      <Nav /><div className="scanlines" />
-      <div className="signin-wrap">
-        <div className="signin-box fade-up">
-          <div className="signin-top">
-            <div className="signin-mark">EC</div>
-            <h2 className="neon">
-              {sMode==='forgot' ? 'FORGOT PASSWORD' : sMode==='register' ? 'CREATE ACCOUNT' : 'ACCESS PORTAL'}
-            </h2>
-            <p style={{color:'var(--dim)',fontSize:13,marginTop:8}}>
-              <TypeWriter text={
-                sMode==='register' ? 'Creating your account…' :
-                sMode==='forgot'   ? 'Recover access…' :
-                'Authenticating secure connection…'
-              } />
-            </p>
-          </div>
-          <form onSubmit={submitSignIn} className="signin-form">
-            {sMode==='register' && (
-              <input placeholder="Full Name" required
-                value={sForm.name} onChange={e=>setSForm({...sForm,name:e.target.value})} />
-            )}
-            {sMode==='forgot' ? (
-              <input type="email" placeholder="Your account email" required
-                value={forgotEmail} onChange={e=>setForgotEmail(e.target.value)} />
-            ) : (
-              <>
-                <input type="email" placeholder="Email Address" required
-                  value={sForm.email} onChange={e=>setSForm({...sForm,email:e.target.value})} />
-                <input type="password" placeholder="Password" required
-                  value={sForm.password} onChange={e=>setSForm({...sForm,password:e.target.value})} />
-              </>
-            )}
-            {sMode==='register' && (
-              <label style={{display:'flex',alignItems:'center',gap:10,color:'var(--dim)',
-                fontSize:13,fontFamily:"'JetBrains Mono',monospace",marginBottom:12,cursor:'pointer'}}>
-                <input type="checkbox" checked={sForm.newsletter}
-                  onChange={e=>setSForm({...sForm,newsletter:e.target.checked})}
-                  style={{width:'auto',margin:0}} />
-                Subscribe to our newsletter
-              </label>
-            )}
-            {sOk  && <div className="form-success">{sOk}</div>}
-            {sErr && <div className="form-error">{sErr}</div>}
-            <button type="submit" className="btn-neon" disabled={sBusy}>
-              {sBusy
-                ? <span className="dots">Verifying<span>.</span><span>.</span><span>.</span></span>
-                : sMode==='register' ? 'Create Account'
-                : sMode==='forgot'   ? 'Send Reset Link'
-                : 'Sign In'}
-            </button>
-          </form>
-          <div className="signin-footer">
-            {sMode==='login' && <>
-              New client?{' '}
-              <button className="link-btn" onClick={()=>{setSMode('register');setSErr('');setSOk('');}}>
-                Create an account
-              </button>
-              {' · '}
-              <button className="link-btn" onClick={()=>{setSMode('forgot');setSErr('');setSOk('');}}>
-                Forgot password?
-              </button>
-            </>}
-            {sMode==='register' && <>
-              Have an account?{' '}
-              <button className="link-btn" onClick={()=>{setSMode('login');setSErr('');setSOk('');}}>
-                Sign in
-              </button>
-            </>}
-            {sMode==='forgot' && <>
-              Remember it?{' '}
-              <button className="link-btn" onClick={()=>{setSMode('login');setSErr('');setSOk('');}}>
-                Back to sign in
-              </button>
-            </>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── PORTAL ───────────────────────────────────────────────────
-  if (page === 'portal' && auth?.role === 'user') return (
-    <div className="app" key={pageKey}>
-      <Nav />
-      <Portal auth={auth} setAuth={setAuth} onNavigate={go} />
-    </div>
-  );
-
-  // ── ADMIN ────────────────────────────────────────────────────
-  if (page === 'admin' && auth?.role === 'admin') return (
-    <div className="app" key={pageKey}>
-      <Nav />
-      <Admin />
-    </div>
-  );
-
-  return null;
-}
-
-// ── BLOG POST COMPONENT ──────────────────────────────────────
-function BlogPost({ slug, go, Nav }) {
-  const [post, setPost]     = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`${API}/api/blog/${slug}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(p => { setPost(p); setLoading(false); });
-  }, [slug]);
+  const TABS = [
+    { id:'dashboard',     label:'Dashboard',     icon:'◈' },
+    { id:'leads',         label:'Leads',          icon:'✉', badge: unread.leads },
+    { id:'messages',      label:'Messages',       icon:'✦', badge: unread.messages },
+    { id:'users',         label:'Users',          icon:'👥' },
+    { id:'projects',      label:'Projects',       icon:'◎' },
+    { id:'appointments',  label:'Appointments',   icon:'📅', badge: unread.appointments },
+    { id:'documents',     label:'Documents',      icon:'📄' },
+    { id:'blog',          label:'Blog',           icon:'📝' },
+    { id:'testimonials',  label:'Testimonials',   icon:'⭐' },
+    { id:'newsletter',    label:'Newsletter',     icon:'📧' },
+  ];
 
   if (loading) return (
-    <div className="app">
-      <Nav />
-      <div className="portal-loading"><div className="portal-spinner" /></div>
-    </div>
-  );
-
-  if (!post) return (
-    <div className="app">
-      <Nav />
-      <div className="section" style={{textAlign:'center'}}>
-        <h2 style={{color:'var(--text)'}}>Post not found</h2>
-        <button className="btn-outline" style={{marginTop:20}} onClick={()=>go('blog')}>
-          ← Back to Blog
-        </button>
-      </div>
+    <div className="portal-loading">
+      <div className="portal-spinner" />
+      <p>Loading admin panel…</p>
     </div>
   );
 
   return (
-    <div className="app">
-      <Nav /><div className="scanlines" />
-      <div style={{maxWidth:760,margin:'0 auto',padding:'60px 5%'}}>
-        <button className="p-back" style={{marginBottom:28}} onClick={() => go('blog')}>
-          ← Back to Blog
-        </button>
-        {post.tags && (
-          <span className="tag" style={{marginBottom:16,display:'block'}}>
-            {post.tags.split(',')[0]}
-          </span>
+    <div className="portal-wrap">
+
+      {/* SIDEBAR */}
+      <aside className="portal-sidebar">
+        <div className="ps-user">
+          <div className="ps-avatar" style={{background:'linear-gradient(135deg,#f59e0b,#ff6b6b)'}}>A</div>
+          <div>
+            <div className="ps-name">Administrator</div>
+            <div className="ps-role" style={{color:'#f59e0b'}}>ADMIN PANEL</div>
+          </div>
+        </div>
+        <nav className="ps-nav">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`ps-link${tab===t.id?' ps-active':''}`}>
+              <span className="ps-icon">{t.icon}</span>
+              {t.label}
+              {t.badge > 0 && <span className="ps-badge">{t.badge}</span>}
+            </button>
+          ))}
+        </nav>
+        <button className="ps-enquire" style={{background:'rgba(255,107,107,0.15)',color:'#ff6b6b',border:'1px solid rgba(255,107,107,0.3)'}}
+          onClick={load}>↻ Refresh</button>
+      </aside>
+
+      {/* MAIN */}
+      <main className="portal-main">
+
+        {/* ── DASHBOARD ── */}
+        {tab === 'dashboard' && analytics && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Dashboard <span className="p-hi">Overview</span></h2>
+              <p>Real-time snapshot of your consulting platform.</p>
+            </div>
+
+            {/* Stat cards */}
+            <div className="admin-stat-cards">
+              {[
+                { label:'Total Leads',    val: analytics.totals.leads,        color:'#f59e0b', icon:'✉' },
+                { label:'Registered Users', val: analytics.totals.users,      color:'#38bdf8', icon:'👥' },
+                { label:'Active Projects', val: analytics.totals.projects,    color:'#34d399', icon:'◎' },
+                { label:'Messages',        val: analytics.totals.messages,    color:'#a78bfa', icon:'✦' },
+                { label:'Appointments',    val: analytics.totals.appointments,color:'#f59e0b', icon:'📅' },
+                { label:'Newsletter Subs', val: analytics.totals.newsletter,  color:'#38bdf8', icon:'📧' },
+              ].map((s,i) => (
+                <div key={i} className="admin-stat" style={{borderLeftColor:s.color}}>
+                  <div className="admin-stat-val" style={{color:s.color}}>{s.icon} {s.val}</div>
+                  <div className="admin-stat-lbl">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Leads by status */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:8}}>
+              <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20}}>
+                <div className="p-block-title" style={{marginBottom:14}}>Leads by Status</div>
+                {analytics.by_status.map((s,i) => (
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <span style={{color: STATUS_COLORS[s.status] || '#dde8f5',fontFamily:'JetBrains Mono,monospace',fontSize:12,textTransform:'uppercase'}}>{s.status}</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:80,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
+                        <div style={{width:`${Math.min((s.c/analytics.totals.leads)*100,100)}%`,height:'100%',background: STATUS_COLORS[s.status]||'#dde8f5',borderRadius:3}} />
+                      </div>
+                      <span style={{color:'var(--text)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20}}>
+                <div className="p-block-title" style={{marginBottom:14}}>Lead Score</div>
+                {analytics.by_score.map((s,i) => {
+                  const sm = SCORE_META[s.score] || SCORE_META.warm;
+                  return (
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                      <span style={{color:sm.color,fontFamily:'JetBrains Mono,monospace',fontSize:12}}>{sm.label}</span>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:80,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
+                          <div style={{width:`${Math.min((s.c/analytics.totals.leads)*100,100)}%`,height:'100%',background:sm.color,borderRadius:3}} />
+                        </div>
+                        <span style={{color:'var(--text)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Top services */}
+            {analytics.by_service.length > 0 && (
+              <div className="p-block" style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:20,marginTop:16}}>
+                <div className="p-block-title" style={{marginBottom:14}}>Top Requested Services</div>
+                {analytics.by_service.map((s,i) => (
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <span style={{color:'var(--body)',fontSize:13}}>{s.service}</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:120,height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
+                        <div style={{width:`${Math.min((s.c/analytics.by_service[0].c)*100,100)}%`,height:'100%',background:'linear-gradient(90deg,#00d4ff,#00ffb3)',borderRadius:3}} />
+                      </div>
+                      <span style={{color:'var(--blue)',fontFamily:'JetBrains Mono,monospace',fontSize:12,minWidth:20}}>{s.c}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Unread alerts */}
+            {unread.total > 0 && (
+              <div style={{background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.25)',borderRadius:6,padding:16,marginTop:16}}>
+                <div style={{color:'#f59e0b',fontFamily:'JetBrains Mono,monospace',fontSize:12,letterSpacing:2,marginBottom:10}}>⚠ ACTION REQUIRED</div>
+                <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+                  {unread.leads > 0        && <span style={{color:'var(--body)',fontSize:13}}>📬 <strong style={{color:'var(--text)'}}>{unread.leads}</strong> new leads</span>}
+                  {unread.messages > 0     && <span style={{color:'var(--body)',fontSize:13}}>💬 <strong style={{color:'var(--text)'}}>{unread.messages}</strong> unread messages</span>}
+                  {unread.appointments > 0 && <span style={{color:'var(--body)',fontSize:13}}>📅 <strong style={{color:'var(--text)'}}>{unread.appointments}</strong> pending appointments</span>}
+                </div>
+              </div>
+            )}
+          </div>
         )}
-        <h1 style={{fontFamily:"'Rajdhani',sans-serif",
-          fontSize:'clamp(28px,4vw,52px)',fontWeight:700,
-          color:'var(--text)',textTransform:'uppercase',
-          letterSpacing:2,marginBottom:16}}>
-          {post.title}
-        </h1>
-        <div className="p-date" style={{marginBottom:36}}>
-          {new Date(post.created_at).toLocaleDateString('en-GB',{dateStyle:'long'})}
-        </div>
-        <div style={{color:'var(--body)',fontSize:16,lineHeight:1.9,whiteSpace:'pre-wrap'}}>
-          {post.content}
-        </div>
-      </div>
+
+        {/* ── LEADS ── */}
+        {tab === 'leads' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Leads <span className="p-hi">Management</span></h2>
+              <p>All enquiries with scoring, filtering, bulk actions, and CSV export.</p>
+            </div>
+
+            {/* Toolbar */}
+            <div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
+              <input placeholder="Search name, email, service…" value={leadSearch}
+                onChange={e=>setLeadSearch(e.target.value)}
+                style={{flex:1,minWidth:200,marginBottom:0}} />
+              <select value={leadFilter} onChange={e=>setLeadFilter(e.target.value)} style={{width:140,marginBottom:0}}>
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="reviewing">Reviewing</option>
+                <option value="responded">Responded</option>
+                <option value="closed">Closed</option>
+                <option value="hot">🔥 Hot</option>
+                <option value="warm">🟡 Warm</option>
+                <option value="cold">❄️ Cold</option>
+              </select>
+              <button className="save-btn" onClick={exportCSV}>↓ Export CSV</button>
+            </div>
+
+            {/* Bulk actions */}
+            {selLeads.length > 0 && (
+              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:14,
+                background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.2)',
+                borderRadius:6,padding:'10px 14px'}}>
+                <span style={{color:'var(--blue)',fontFamily:'JetBrains Mono,monospace',fontSize:12}}>
+                  {selLeads.length} selected
+                </span>
+                <select value={bulkStatus} onChange={e=>setBulkStatus(e.target.value)} style={{width:130,marginBottom:0}}>
+                  <option value="reviewing">Reviewing</option>
+                  <option value="responded">Responded</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <button className="save-btn" onClick={bulkUpdate}>Apply to All</button>
+                <button className="del-btn" onClick={()=>setSelLeads([])}>Clear</button>
+              </div>
+            )}
+
+            {selLead ? (
+              <div className="fade-up">
+                <button className="p-back" onClick={()=>setSelLead(null)}>← Back to list</button>
+                <div className="p-detail-card">
+                  <div className="p-detail-top">
+                    <div>
+                      <div style={{color:'var(--text)',fontWeight:700,fontSize:16}}>{selLead.name}</div>
+                      <div style={{color:'var(--blue)',fontFamily:'JetBrains Mono,monospace',fontSize:12,marginTop:4}}>{selLead.email}</div>
+                      <div className="p-date" style={{marginTop:4}}>{selLead.service || 'General'} · {new Date(selLead.created_at).toLocaleDateString('en-GB')}</div>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+                      {(() => { const sm = SCORE_META[selLead.score] || SCORE_META.warm;
+                        return <span style={{color:sm.color,background:sm.bg,border:`1px solid ${sm.color}`,fontFamily:'JetBrains Mono,monospace',fontSize:11,padding:'3px 10px',borderRadius:2}}>{sm.label}</span>;
+                      })()}
+                    </div>
+                  </div>
+                  <div className="p-detail-section">
+                    <div className="p-detail-label">MESSAGE</div>
+                    <div className="p-detail-body">{selLead.message}</div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginTop:18}}>
+                    <div>
+                      <label className="p-label">Status</label>
+                      <select value={leadStatus} onChange={e=>setLeadStatus(e.target.value)} style={{marginBottom:0}}>
+                        <option value="pending">Pending</option>
+                        <option value="reviewing">Reviewing</option>
+                        <option value="responded">Responded</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginTop:14}}>
+                    <label className="p-label">Response to Client (sent by email)</label>
+                    <textarea rows={4} value={leadResp} onChange={e=>setLeadResp(e.target.value)}
+                      placeholder="Type your response — client will be notified by email…" />
+                  </div>
+                  <div style={{display:'flex',gap:10,marginTop:4}}>
+                    <button className="save-btn" style={{padding:'9px 22px'}} onClick={()=>saveLead(selLead.id)}>Save & Notify Client</button>
+                    <button className="del-btn" onClick={()=>deleteLead(selLead.id)}>Delete Lead</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-list">
+                {filteredLeads.length === 0 && (
+                  <div className="p-empty"><div className="p-empty-icon">✉</div><h3>No leads found</h3></div>
+                )}
+                {filteredLeads.map(l => {
+                  const sm = SCORE_META[l.score] || SCORE_META.warm;
+                  const sc = STATUS_COLORS[l.status] || '#dde8f5';
+                  return (
+                    <div key={l.id} className="p-row" style={{cursor:'default'}}>
+                      <input type="checkbox" checked={selLeads.includes(l.id)}
+                        onChange={()=>toggleSelLead(l.id)}
+                        style={{width:'auto',margin:'4px 8px 0 0',flexShrink:0}} />
+                      <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>{setSelLead(l);setLeadStatus(l.status||'pending');setLeadResp(l.admin_response||'');}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                          <span style={{color:'var(--text)',fontWeight:700,fontSize:14}}>{l.name}</span>
+                          <span style={{color:'var(--blue)',fontFamily:'JetBrains Mono,monospace',fontSize:11}}>{l.email}</span>
+                          {!l.read_by_admin && <span style={{background:'#ff6b6b',color:'#fff',fontSize:9,padding:'1px 6px',borderRadius:8,fontWeight:700}}>NEW</span>}
+                        </div>
+                        <div className="p-preview">{l.message?.slice(0,90)}…</div>
+                        <div style={{color:'var(--dim2)',fontFamily:'JetBrains Mono,monospace',fontSize:10,marginTop:4}}>{l.service || 'General'} · {new Date(l.created_at).toLocaleDateString('en-GB')}</div>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6,flexShrink:0}}>
+                        <span style={{color:sm.color,background:sm.bg,border:`1px solid ${sm.color}`,fontFamily:'JetBrains Mono,monospace',fontSize:10,padding:'2px 8px',borderRadius:2}}>{sm.label}</span>
+                        <span style={{color:sc,fontFamily:'JetBrains Mono,monospace',fontSize:10,textTransform:'uppercase'}}>{l.status}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MESSAGES ── */}
+        {tab === 'messages' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Client <span className="p-hi">Messages</span></h2>
+              <p>Reply to client messages. Clients are notified by email on reply.</p>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'240px 1fr',gap:16,height:560}}>
+              {/* User list */}
+              <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,overflow:'auto'}}>
+                {uniqueUsers.length === 0 && <div style={{padding:20,color:'var(--dim)',fontSize:13,textAlign:'center'}}>No messages yet</div>}
+                {uniqueUsers.map(u => {
+                  const unreadCount = messages.filter(m=>m.user_id===u.id&&m.sender==='user'&&!m.read_by_admin).length;
+                  return (
+                    <div key={u.id} onClick={()=>setSelUser(u)}
+                      style={{padding:'14px 16px',cursor:'pointer',borderBottom:'1px solid rgba(0,212,255,0.06)',
+                        background: selUser?.id===u.id ? 'rgba(0,212,255,0.08)' : 'transparent',
+                        borderLeft: selUser?.id===u.id ? '2px solid var(--blue)' : '2px solid transparent'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#00d4ff,#00ffb3)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:14,color:'#000',flexShrink:0}}>{u.name?.charAt(0).toUpperCase()}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{color:'var(--text)',fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.name}</div>
+                          <div style={{color:'var(--dim)',fontSize:11,fontFamily:'JetBrains Mono,monospace',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.email}</div>
+                        </div>
+                        {unreadCount > 0 && <span className="ps-badge" style={{marginLeft:'auto'}}>{unreadCount}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Thread */}
+              {selUser ? (
+                <div className="p-chat" style={{height:'100%'}}>
+                  <div style={{padding:'12px 16px',borderBottom:'1px solid rgba(0,212,255,0.1)',background:'rgba(0,0,0,0.2)'}}>
+                    <span style={{color:'var(--text)',fontWeight:700}}>{selUser.name}</span>
+                    <span style={{color:'var(--dim)',fontFamily:'JetBrains Mono,monospace',fontSize:11,marginLeft:8}}>{selUser.email}</span>
+                  </div>
+                  <div className="p-chat-feed">
+                    {threadMsgs.map(m => (
+                      <div key={m.id} className={`p-bubble-wrap ${m.sender==='user'?'p-bubble-left':'p-bubble-right'}`}>
+                        <div className="p-bubble-who">{m.sender==='user'?m.user_name:'⚡ Admin'}</div>
+                        <div className={`p-bubble ${m.sender==='user'?'p-bubble-a':'p-bubble-u'}`}>{m.content}</div>
+                        <div className="p-bubble-time">{new Date(m.created_at).toLocaleString('en-GB',{dateStyle:'short',timeStyle:'short'})}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-chat-bar">
+                    <input className="p-chat-input" placeholder="Type reply… (Enter to send)"
+                      value={reply} onChange={e=>setReply(e.target.value)}
+                      onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&sendReply()} />
+                    <button className="p-chat-send" onClick={sendReply} disabled={replySending||!reply.trim()}>
+                      {replySending?'…':'→'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,color:'var(--dim)',fontFamily:'JetBrains Mono,monospace',fontSize:13}}>
+                  Select a client to view messages
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── USERS ── */}
+        {tab === 'users' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Registered <span className="p-hi">Users</span></h2>
+              <p>{users.length} registered clients on the platform.</p>
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th><th>Email</th><th>Onboarding</th><th>Newsletter</th><th>Joined</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(u => (
+                    <tr key={u.id}>
+                      <td style={{color:'var(--text)',fontWeight:600}}>{u.name}</td>
+                      <td><a href={`mailto:${u.email}`} style={{color:'var(--blue)'}}>{u.email}</a></td>
+                      <td>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{width:60,height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
+                            <div style={{width:`${(u.onboarding_step/4)*100}%`,height:'100%',background:'linear-gradient(90deg,var(--blue),var(--green))',borderRadius:2}} />
+                          </div>
+                          <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:10,color:'var(--dim)'}}>{u.onboarding_step}/4</span>
+                        </div>
+                      </td>
+                      <td><span style={{color:u.newsletter?'#34d399':'var(--dim)',fontSize:13}}>{u.newsletter?'✓ Yes':'No'}</span></td>
+                      <td className="p-date">{new Date(u.created_at).toLocaleDateString('en-GB')}</td>
+                      <td>
+                        <button className="del-btn" onClick={async()=>{ if(!confirm('Delete user?'))return; await fetch(`${API}/api/admin/users/${u.id}`,{method:'DELETE',headers:H}); load(); }}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── PROJECTS ── */}
+        {tab === 'projects' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Project <span className="p-hi">Management</span></h2>
+              <p>Create and update client projects with phases and milestones.</p>
+            </div>
+
+            {/* Project form */}
+            <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
+              <div className="p-block-title" style={{marginBottom:16}}>{pEdit ? 'Edit Project' : 'Create New Project'}</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+                {!pEdit && (
+                  <div>
+                    <label className="p-label">Client (User ID)</label>
+                    <select value={pForm.user_id} onChange={e=>setPForm({...pForm,user_id:e.target.value})} style={{marginBottom:0}}>
+                      <option value="">Select client…</option>
+                      {users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="p-label">Project Title</label>
+                  <input value={pForm.title} onChange={e=>setPForm({...pForm,title:e.target.value})} placeholder="e.g. AI Dashboard Build" style={{marginBottom:0}} />
+                </div>
+                <div>
+                  <label className="p-label">Phase</label>
+                  <select value={pForm.phase} onChange={e=>setPForm({...pForm,phase:e.target.value})} style={{marginBottom:0}}>
+                    {['Discovery','Design','Build','Testing','Deploy'].map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="p-label">Status</label>
+                  <select value={pForm.status} onChange={e=>setPForm({...pForm,status:e.target.value})} style={{marginBottom:0}}>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="on_hold">On Hold</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="p-label">Progress: {pForm.progress}%</label>
+                  <input type="range" min="0" max="100" value={pForm.progress}
+                    onChange={e=>setPForm({...pForm,progress:parseInt(e.target.value)})}
+                    style={{marginBottom:0,padding:'8px 0'}} />
+                </div>
+              </div>
+              <div style={{marginTop:14}}>
+                <label className="p-label">Description</label>
+                <textarea rows={2} value={pForm.description} onChange={e=>setPForm({...pForm,description:e.target.value})} placeholder="Brief project description…" />
+              </div>
+              <div style={{display:'flex',gap:10}}>
+                <button className="save-btn" style={{padding:'9px 22px'}} onClick={saveProject}>
+                  {pEdit ? 'Update Project' : 'Create Project'}
+                </button>
+                {pEdit && <button className="del-btn" onClick={()=>{setPEdit(null);setPForm({user_id:'',title:'',description:'',status:'in_progress',progress:0,phase:'Discovery'});}}>Cancel</button>}
+              </div>
+            </div>
+
+            {/* Milestone form */}
+            <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
+              <div className="p-block-title" style={{marginBottom:16}}>Add Milestone</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr auto',gap:14,alignItems:'end'}}>
+                <div>
+                  <label className="p-label">Project</label>
+                  <input value={mForm.project_id} onChange={e=>setMForm({...mForm,project_id:e.target.value})} placeholder="Project ID" style={{marginBottom:0}} />
+                </div>
+                <div>
+                  <label className="p-label">Milestone Title</label>
+                  <input value={mForm.title} onChange={e=>setMForm({...mForm,title:e.target.value})} placeholder="e.g. API integration complete" style={{marginBottom:0}} />
+                </div>
+                <div>
+                  <label className="p-label">Phase</label>
+                  <select value={mForm.phase} onChange={e=>setMForm({...mForm,phase:e.target.value})} style={{marginBottom:0}}>
+                    {['Discovery','Design','Build','Testing','Deploy'].map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <button className="save-btn" style={{padding:'10px 18px',marginBottom:1}} onClick={addMilestone}>Add</button>
+              </div>
+            </div>
+
+            {/* Projects list — fetched per user from leads context */}
+            <div className="p-block-title" style={{marginBottom:12}}>All Users with Projects</div>
+            {users.map(u => (
+              <div key={u.id} style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.1)',borderRadius:6,padding:16,marginBottom:10}}>
+                <div style={{color:'var(--text)',fontWeight:700,marginBottom:4}}>{u.name}</div>
+                <div style={{color:'var(--dim)',fontFamily:'JetBrains Mono,monospace',fontSize:11}}>User ID: {u.id} — use this ID above to assign projects</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── APPOINTMENTS ── */}
+        {tab === 'appointments' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Appointment <span className="p-hi">Requests</span></h2>
+              <p>Manage consultation bookings from clients.</p>
+            </div>
+            {appts.length === 0 ? (
+              <div className="p-empty"><div className="p-empty-icon">📅</div><h3>No appointments yet</h3></div>
+            ) : (
+              <div style={{overflowX:'auto'}}>
+                <table className="admin-table">
+                  <thead>
+                    <tr><th>Name</th><th>Email</th><th>Date</th><th>Time</th><th>Service</th><th>Notes</th><th>Status</th><th>Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {appts.map(a => (
+                      <tr key={a.id}>
+                        <td style={{color:'var(--text)',fontWeight:600}}>{a.name}</td>
+                        <td><a href={`mailto:${a.email}`} style={{color:'var(--blue)'}}>{a.email}</a></td>
+                        <td style={{color:'var(--text)'}}>{a.date}</td>
+                        <td style={{color:'var(--text)'}}>{a.time} EAT</td>
+                        <td style={{color:'var(--dim)'}}>{a.service || 'General'}</td>
+                        <td style={{color:'var(--dim)',maxWidth:160}}>{a.notes || '—'}</td>
+                        <td>
+                          <span style={{color: a.status==='confirmed'?'#34d399':a.status==='cancelled'?'#ff6b6b':'#f59e0b',
+                            fontFamily:'JetBrains Mono,monospace',fontSize:11,textTransform:'uppercase'}}>
+                            {a.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{display:'flex',gap:6}}>
+                            <button className="save-btn" onClick={()=>updateAppt(a.id,'confirmed')}>✓ Confirm</button>
+                            <button className="del-btn"  onClick={()=>updateAppt(a.id,'cancelled')}>✗ Cancel</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── DOCUMENTS ── */}
+        {tab === 'documents' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Document <span className="p-hi">Upload</span></h2>
+              <p>Upload proposals, invoices, and contracts to client portals.</p>
+            </div>
+            <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,maxWidth:540}}>
+              <div className="p-block-title" style={{marginBottom:16}}>Upload Document to Client</div>
+              <div className="p-field">
+                <label className="p-label">Client</label>
+                <select value={docForm.user_id} onChange={e=>setDocForm({...docForm,user_id:e.target.value})}>
+                  <option value="">Select client…</option>
+                  {users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                </select>
+              </div>
+              <div className="p-field">
+                <label className="p-label">Document Title</label>
+                <input value={docForm.title} onChange={e=>setDocForm({...docForm,title:e.target.value})} placeholder="e.g. Phase 1 Proposal" />
+              </div>
+              <div className="p-field">
+                <label className="p-label">Document Type</label>
+                <select value={docForm.doc_type} onChange={e=>setDocForm({...docForm,doc_type:e.target.value})}>
+                  <option value="general">General</option>
+                  <option value="proposal">Proposal</option>
+                  <option value="invoice">Invoice</option>
+                  <option value="contract">Contract</option>
+                  <option value="report">Report</option>
+                </select>
+              </div>
+              <div className="p-field">
+                <label className="p-label">File</label>
+                <input type="file" onChange={e=>setDocFile(e.target.files[0])}
+                  style={{padding:'10px 14px',cursor:'pointer'}} />
+              </div>
+              <button className="save-btn" style={{padding:'10px 24px'}} onClick={uploadDoc}>
+                ↑ Upload Document
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── BLOG ── */}
+        {tab === 'blog' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Blog <span className="p-hi">Posts</span></h2>
+              <p>Write and publish articles to the public blog.</p>
+            </div>
+
+            {/* Blog form */}
+            <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
+              <div className="p-block-title" style={{marginBottom:16}}>{bEdit ? 'Edit Post' : 'New Post'}</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+                <div>
+                  <label className="p-label">Title</label>
+                  <input value={bForm.title} onChange={e=>setBForm({...bForm,title:e.target.value})} placeholder="Post title" style={{marginBottom:0}} />
+                </div>
+                <div>
+                  <label className="p-label">Slug (URL)</label>
+                  <input value={bForm.slug} onChange={e=>setBForm({...bForm,slug:e.target.value.toLowerCase().replace(/\s+/g,'-')})} placeholder="post-url-slug" style={{marginBottom:0}} />
+                </div>
+                <div>
+                  <label className="p-label">Tags (comma separated)</label>
+                  <input value={bForm.tags} onChange={e=>setBForm({...bForm,tags:e.target.value})} placeholder="AI, Web3, Cloud" style={{marginBottom:0}} />
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10,paddingTop:20}}>
+                  <label style={{display:'flex',alignItems:'center',gap:8,color:'var(--body)',fontSize:13,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer'}}>
+                    <input type="checkbox" checked={bForm.published} onChange={e=>setBForm({...bForm,published:e.target.checked})} style={{width:'auto',margin:0}} />
+                    Publish immediately
+                  </label>
+                </div>
+              </div>
+              <div style={{marginTop:14}}>
+                <label className="p-label">Excerpt (shown in previews)</label>
+                <input value={bForm.excerpt} onChange={e=>setBForm({...bForm,excerpt:e.target.value})} placeholder="Short summary of the post…" />
+              </div>
+              <div>
+                <label className="p-label">Content</label>
+                <textarea rows={8} value={bForm.content} onChange={e=>setBForm({...bForm,content:e.target.value})} placeholder="Write your article here…" />
+              </div>
+              <div style={{display:'flex',gap:10}}>
+                <button className="save-btn" style={{padding:'9px 22px'}} onClick={saveBlog}>
+                  {bEdit ? 'Update Post' : 'Publish Post'}
+                </button>
+                {bEdit && <button className="del-btn" onClick={()=>{setBEdit(null);setBForm({title:'',slug:'',excerpt:'',content:'',tags:'',published:false});}}>Cancel</button>}
+              </div>
+            </div>
+
+            {/* Posts list */}
+            <div className="p-list">
+              {blogPosts.length === 0 && <div className="p-empty"><div className="p-empty-icon">📝</div><h3>No posts yet</h3></div>}
+              {blogPosts.map(p => (
+                <div key={p.id} className="p-row">
+                  <div style={{flex:1}}>
+                    <div style={{color:'var(--text)',fontWeight:700,fontSize:14,marginBottom:4}}>{p.title}</div>
+                    <div className="p-preview">{p.excerpt}</div>
+                    <div style={{display:'flex',gap:8,marginTop:6,alignItems:'center'}}>
+                      {p.tags && <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:10,color:'var(--blue)',border:'1px solid rgba(0,212,255,0.25)',padding:'1px 8px',borderRadius:2}}>{p.tags.split(',')[0]}</span>}
+                      <span style={{color:p.published?'#34d399':'var(--dim)',fontFamily:'JetBrains Mono,monospace',fontSize:10}}>{p.published?'● PUBLISHED':'○ DRAFT'}</span>
+                      <span className="p-date">{new Date(p.created_at).toLocaleDateString('en-GB')}</span>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexShrink:0}}>
+                    <button className="save-btn" onClick={()=>{ setBEdit(p.id); setBForm({title:p.title,slug:p.slug,excerpt:p.excerpt,content:p.content,tags:p.tags||'',published:!!p.published}); }}>Edit</button>
+                    <button className="del-btn" onClick={()=>deleteBlog(p.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── TESTIMONIALS ── */}
+        {tab === 'testimonials' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Testimonial <span className="p-hi">Review</span></h2>
+              <p>Approve or reject client testimonials before they appear on the site.</p>
+            </div>
+            {testimonials.length === 0 ? (
+              <div className="p-empty"><div className="p-empty-icon">⭐</div><h3>No testimonials yet</h3></div>
+            ) : (
+              <div className="p-list">
+                {testimonials.map(t => (
+                  <div key={t.id} className="p-row">
+                    <div style={{flex:1}}>
+                      <div style={{color:'#f59e0b',fontSize:14,marginBottom:6}}>{'★'.repeat(t.rating)}</div>
+                      <div style={{color:'var(--body)',fontStyle:'italic',marginBottom:8}}>"{t.content}"</div>
+                      <div style={{color:'var(--text)',fontWeight:700,fontSize:13}}>{t.client_name}</div>
+                      {t.role && <div className="p-date">{t.role}{t.company?`, ${t.company}`:''}</div>}
+                      <div style={{marginTop:6}}>
+                        <span style={{color:t.approved?'#34d399':'#f59e0b',fontFamily:'JetBrains Mono,monospace',fontSize:10,textTransform:'uppercase'}}>
+                          {t.approved?'● Approved':'○ Pending Approval'}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8,flexShrink:0}}>
+                      {!t.approved && <button className="save-btn" onClick={()=>approveTestimonial(t.id,true)}>✓ Approve</button>}
+                      {t.approved  && <button className="del-btn" style={{color:'#f59e0b',borderColor:'rgba(245,158,11,0.3)'}} onClick={()=>approveTestimonial(t.id,false)}>Unpublish</button>}
+                      <button className="del-btn" onClick={()=>deleteTestimonial(t.id)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── NEWSLETTER ── */}
+        {tab === 'newsletter' && (
+          <div className="p-section fade-up">
+            <div className="p-heading">
+              <h2>Newsletter <span className="p-hi">Subscribers</span></h2>
+              <p>{newsletter.length} subscribers on your mailing list.</p>
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <table className="admin-table">
+                <thead><tr><th>#</th><th>Email</th><th>Subscribed</th></tr></thead>
+                <tbody>
+                  {newsletter.map((n,i) => (
+                    <tr key={n.id}>
+                      <td style={{color:'var(--dim)'}}>{i+1}</td>
+                      <td><a href={`mailto:${n.email}`} style={{color:'var(--blue)'}}>{n.email}</a></td>
+                      <td className="p-date">{new Date(n.created_at).toLocaleDateString('en-GB')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </main>
     </div>
   );
 }
