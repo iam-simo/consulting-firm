@@ -82,7 +82,7 @@ export default function Admin({ auth, onLogout }) {
       if (nR.ok)  setUnread(await nR.json());
       // If any 401/403, token is expired — force re-login
       if ([lR, uR, mR, aR, apR].some(r => r.status === 401 || r.status === 403)) {
-        onlogout();
+        onLogout();
       }
     } catch(e) { console.error(e); }
     setLoading(false);
@@ -115,7 +115,6 @@ export default function Admin({ auth, onLogout }) {
   };
 
   const exportCSV = () => {
-    const token = adminToken;
     const url = `${API}/api/admin/leads/export`;
     fetch(url, { headers: H })
       .then(r => r.blob())
@@ -225,7 +224,7 @@ export default function Admin({ auth, onLogout }) {
     fd.append('doc_type', docForm.doc_type);
     fd.append('file', docFile);
     await fetch(`${API}/api/admin/documents`, {
-      method:'POST', headers:{ 'Authorization': `Bearer ${adminToken}` }, body: fd,
+      method:'POST', headers:{ 'x-admin-key': 'Admin123' }, body: fd,
     });
     setDocForm({ user_id:'', title:'', doc_type:'general' }); setDocFile(null); load();
   };
