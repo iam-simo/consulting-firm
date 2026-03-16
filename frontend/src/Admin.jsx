@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 
 const API = 'https://consulting-backend-y19q.onrender.com';
-
+const AKEY = 'Admin123';
+const H    = { 'x-admin-key': 'Admin123', 'Content-Type': 'application/json' };
 const SCORE_META = {
   hot:  { color: '#ff6b6b', bg: 'rgba(255,107,107,0.12)', label: '🔥 Hot'  },
   warm: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  label: '🟡 Warm' },
@@ -14,14 +15,7 @@ const STATUS_COLORS = {
   responded: '#34d399',
   closed:    '#94a3b8',
 };
-
-export default function Admin() {
-  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('admin_token') || '');
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-
+export default function Admin({ auth, onLogout }) {
   const [tab, setTab]               = useState('dashboard');
   const [leads, setLeads]           = useState([]);
   const [users, setUsers]           = useState([]);
@@ -59,38 +53,9 @@ export default function Admin() {
   const [leadFilter, setLeadFilter] = useState('all');
 
   // Build auth headers from JWT token
-  const H = adminToken
-    ? { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' };
 
   // ── ADMIN LOGIN ───────────────────────────────────────────
-  const doLogin = async () => {
-    setLoginLoading(true);
-    setLoginError('');
-    try {
-      const r = await fetch(`${API}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword, role: 'admin' }),
-      });
-      if (!r.ok) {
-        const err = await r.json();
-        setLoginError(err.detail || 'Invalid credentials');
-      } else {
-        const data = await r.json();
-        localStorage.setItem('admin_token', data.token);
-        setAdminToken(data.token);
-      }
-    } catch(e) {
-      setLoginError('Connection error — check your backend is running.');
-    }
-    setLoginLoading(false);
-  };
 
-  const logout = () => {
-    localStorage.removeItem('admin_token');
-    setAdminToken('');
-  };
 
   const load = async () => {
     setLoading(true);
@@ -117,13 +82,13 @@ export default function Admin() {
       if (nR.ok)  setUnread(await nR.json());
       // If any 401/403, token is expired — force re-login
       if ([lR, uR, mR, aR, apR].some(r => r.status === 401 || r.status === 403)) {
-        logout();
+        onlogout();
       }
     } catch(e) { console.error(e); }
     setLoading(false);
   };
 
-  useEffect(() => { if (adminToken) load(); }, [adminToken]);
+  useEffect(() => { load(); }, []);
 
   // ── LEADS ─────────────────────────────────────────────────
   const saveLead = async (id) => {
@@ -279,48 +244,8 @@ export default function Admin() {
   ];
 
   // ── LOGIN SCREEN ──────────────────────────────────────────
-  if (!adminToken) {
-    return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'var(--bg)' }}>
-        <div style={{ background:'var(--surface)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:8, padding:40, width:380, maxWidth:'90vw' }}>
-          <div style={{ color:'var(--blue)', fontFamily:"'JetBrains Mono',monospace", fontSize:11, letterSpacing:4, marginBottom:8, textAlign:'center' }}>
-            ELITE CONSULTING
-          </div>
-          <h2 style={{ color:'var(--text)', fontWeight:700, fontSize:22, marginBottom:24, textAlign:'center' }}>
-            Admin <span style={{color:'var(--blue)'}}>Login</span>
-          </h2>
-          {loginError && (
-            <div style={{ background:'rgba(255,107,107,0.1)', border:'1px solid rgba(255,107,107,0.3)', color:'#ff6b6b',
-              padding:'10px 14px', borderRadius:4, marginBottom:16, fontSize:13, fontFamily:"'JetBrains Mono',monospace" }}>
-              ✗ {loginError}
-            </div>
-          )}
-          <div style={{ marginBottom:14 }}>
-            <label className="p-label">Admin Email</label>
-            <input type="email" value={loginEmail}
-              onChange={e=>setLoginEmail(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&doLogin()}
-              placeholder="admin@eliteconsulting.co.ke" />
-          </div>
-          <div style={{ marginBottom:24 }}>
-            <label className="p-label">Password</label>
-            <input type="password" value={loginPassword}
-              onChange={e=>setLoginPassword(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&doLogin()}
-              placeholder="••••••••" />
-          </div>
-          <button className="save-btn" style={{ width:'100%', padding:'13px 0', fontSize:14, letterSpacing:1 }}
-            onClick={doLogin} disabled={loginLoading}>
-            {loginLoading ? 'Signing in…' : 'Sign In →'}
-          </button>
-          <div style={{ color:'var(--dim)', fontSize:11, fontFamily:"'JetBrains Mono',monospace", textAlign:'center', marginTop:16 }}>
-            Use ADMIN_EMAIL + ADMIN_PASSWORD from Render env
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  if (!auth) return null;
+    
   if (loading) return (
     <div className="portal-loading">
       <div className="portal-spinner" />
@@ -353,7 +278,7 @@ export default function Admin() {
         <button className="ps-enquire" style={{background:'rgba(0,212,255,0.1)',color:'var(--blue)',border:'1px solid rgba(0,212,255,0.2)'}}
           onClick={load}>↻ Refresh</button>
         <button className="ps-enquire" style={{background:'rgba(255,107,107,0.1)',color:'#ff6b6b',border:'1px solid rgba(255,107,107,0.2)',marginTop:8}}
-          onClick={logout}>⎋ Log Out</button>
+          onClick={onLogout}>⎋ Log Out</button>
       </aside>
 
       {/* MAIN */}

@@ -677,9 +677,11 @@ export default function App() {
     <div className="app" key={pageKey}><Nav /><Portal auth={auth} setAuth={setAuth} onNavigate={go} /></div>
   );
 
-  if (page === 'admin' && auth?.role === 'admin') return (
-    <div className="app" key={pageKey}><Nav /><Admin /></div>
-  );
+ if (page === 'admin' && auth?.role === 'admin') return (
+  <div className="app" key={pageKey}>
+    <Admin auth={auth} onLogout={logout} />
+  </div>
+);
 
   return null;
 }
