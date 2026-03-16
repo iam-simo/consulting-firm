@@ -3,9 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from typing import Optional, List
-import sqlite3, os, smtplib, bcrypt, threading, secrets, csv, io
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import sqlite3, os, bcrypt, threading, secrets, csv, io
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 
@@ -151,20 +149,34 @@ async def verify_admin(x_admin_key: str = Header(None), authorization: str = Hea
             pass
     raise HTTPException(status_code=403, detail="Unauthorized")
 
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+
 def send_email(to, subject, html):
     def _send():
-        if not SMTP_USER or not SMTP_PASS:
-            print(f"[EMAIL] SKIPPED — {subject} → {to}"); return
+        if not RESEND_API_KEY:
+            print(f"[EMAIL] SKIPPED — no RESEND_API_KEY set"); return
         try:
-            msg = MIMEMultipart("alternative")
-            msg["From"] = f"Elite Consulting <{SMTP_USER}>"; msg["To"] = to; msg["Subject"] = subject
-            msg.attach(MIMEText(html, "html"))
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as s:
-                s.ehlo(); s.starttls(); s.ehlo(); s.login(SMTP_USER, SMTP_PASS)
-                s.sendmail(SMTP_USER, to, msg.as_string())
-            print(f"[EMAIL] OK → {to}")
-        except Exception as e: print(f"[EMAIL] ERR: {e}")
-    threading.Thread(target=_send, daemon=True).start()
+            import urllib.request, json
+            payload = json.dumps({
+                "from": "Elite Consulting <onboarding@resend.dev>",
+                "to": [to],
+                "subject": subject,
+                "html": html,
+            }).encode()
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                print(f"[EMAIL] OK → {to} (status {r.status})")
+        except Exception as e:
+            print(f"[EMAIL] ERR: {e}")
+    threading.Thread(target=_send, daemon=False).start()
 
 def _card(title, body):
     return f"""<div style="font-family:Arial,sans-serif;max-width:580px;margin:30px auto;background:#0f1b2d;
