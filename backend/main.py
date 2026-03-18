@@ -158,7 +158,7 @@ def send_email(to, subject, html):
         try:
             import urllib.request, json
             payload = json.dumps({
-                "from": "Elite Consulting <hello@consulting-backend-y19q.onrender.com>",
+                "from": "Elite Consulting <onboarding@resend.dev>",
                 "to": [to],
                 "subject": subject,
                 "html": html,
