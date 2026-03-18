@@ -149,35 +149,26 @@ async def verify_admin(x_admin_key: str = Header(None), authorization: str = Hea
             pass
     raise HTTPException(status_code=403, detail="Unauthorized")
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-
 def send_email(to, subject, html):
     def _send():
-        if not RESEND_API_KEY:
-            print(f"[EMAIL] SKIPPED — no RESEND_API_KEY set"); return
+        if not SMTP_USER or not SMTP_PASS:
+            print(f"[EMAIL] SKIPPED — SMTP_USER or SMTP_PASS not set"); return
         try:
-            import urllib.request, json
-            payload = json.dumps({
-                "from": "Elite Consulting <onboarding@resend.dev>",
-                "to": [to],
-                "subject": subject,
-                "html": html,
-            }).encode()
-            req = urllib.request.Request(
-                "https://api.resend.com/emails",
-                data=payload,
-                headers={
-                    "Authorization": f"Bearer {RESEND_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=30) as r:
-                print(f"[EMAIL] OK → {to} (status {r.status})")
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = f"Elite Consulting <{SMTP_USER}>"
+            msg["To"]      = to
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(SMTP_USER, to, msg.as_string())
+                print(f"[EMAIL] OK → {to}")
         except Exception as e:
             print(f"[EMAIL] ERR: {e}")
     threading.Thread(target=_send, daemon=False).start()
-
 def _card(title, body):
     return f"""<div style="font-family:Arial,sans-serif;max-width:580px;margin:30px auto;background:#0f1b2d;
 color:#dde8f5;border-radius:10px;border:1px solid rgba(0,210,255,0.2);overflow:hidden">
