@@ -492,6 +492,23 @@ export default function App() {
           ))}
         </div>
       </section>
+
+      {/* Footer */}
+      <footer style={{
+        borderTop:'1px solid rgba(0,210,255,0.1)',
+        padding:'32px 5%',
+        textAlign:'center',
+        color:'var(--dim)',
+        fontSize:13,
+        letterSpacing:1
+      }}>
+        <p style={{margin:'0 0 8px'}}>
+          <span style={{color:'var(--accent)'}}>ELITE CONSULTING</span> · Nairobi, Kenya
+        </p>
+        <p style={{margin:0}}>
+          © {new Date().getFullYear()} Elite Consulting. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 

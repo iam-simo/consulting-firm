@@ -168,7 +168,7 @@ def send_email(to, subject, html):
                 print(f"[EMAIL] OK → {to}")
         except Exception as e:
             print(f"[EMAIL] ERR: {e}")
-    threading.Thread(target=_send, daemon=False).start()
+    _send()
 def _card(title, body):
     return f"""<div style="font-family:Arial,sans-serif;max-width:580px;margin:30px auto;background:#0f1b2d;
 color:#dde8f5;border-radius:10px;border:1px solid rgba(0,210,255,0.2);overflow:hidden">
