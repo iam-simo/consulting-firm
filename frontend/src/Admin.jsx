@@ -49,6 +49,9 @@ export default function Admin({ auth, onLogout }) {
   const [docForm, setDocForm]       = useState({ user_id:'', title:'', doc_type:'general' });
   const [docFile, setDocFile]       = useState(null);
 
+  const [newUser, setNewUser]       = useState({ name: '', email: '', temporary_password: '' });
+  const [creating, setCreating]     = useState(false);
+
   const [leadSearch, setLeadSearch] = useState('');
   const [leadFilter, setLeadFilter] = useState('all');
 
@@ -546,6 +549,38 @@ export default function Admin({ auth, onLogout }) {
               <h2>Registered <span className="p-hi">Users</span></h2>
               <p>{users.length} registered clients on the platform.</p>
             </div>
+            <div style={{background:'var(--surface)',border:'1px solid rgba(0,212,255,0.12)',borderRadius:6,padding:24,marginBottom:24}}>
+  <div className="p-block-title" style={{marginBottom:16}}>Create New Client Account</div>
+  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}}>
+    <div>
+      <label className="p-label">Full Name</label>
+      <input value={newUser.name} onChange={e=>setNewUser({...newUser,name:e.target.value})} placeholder="Jane Doe" />
+    </div>
+    <div>
+      <label className="p-label">Email</label>
+      <input value={newUser.email} onChange={e=>setNewUser({...newUser,email:e.target.value})} placeholder="jane@company.com" />
+    </div>
+    <div>
+      <label className="p-label">Temp Password (auto if blank)</label>
+      <input value={newUser.temporary_password} onChange={e=>setNewUser({...newUser,temporary_password:e.target.value})} placeholder="Leave blank to auto-generate" />
+    </div>
+  </div>
+  <button className="save-btn" style={{marginTop:14,padding:'9px 22px'}} disabled={creating}
+    onClick={async () => {
+      if (!newUser.name || !newUser.email) return alert('Name and email required');
+      setCreating(true);
+      const res = await fetch(`${API}/api/admin/users`, {
+        method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      const data = await res.json();
+      setCreating(false);
+      if (res.ok) { alert(data.message); setNewUser({name:'',email:'',temporary_password:''}); load(); }
+      else alert(data.detail || 'Error creating user');
+    }}>
+    {creating ? 'Creating…' : '+ Create & Email Credentials'}
+  </button>
+</div>
             {users.length === 0 ? (
               <div className="p-empty"><div className="p-empty-icon">👥</div><h3>No registered users yet</h3></div>
             ) : (

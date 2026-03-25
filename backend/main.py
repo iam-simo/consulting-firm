@@ -170,7 +170,7 @@ def send_email(to, subject, html):
                 print(f"[EMAIL] OK → {to}")
         except Exception as e:
             print(f"[EMAIL] ERR: {e}")
-    _send()
+    threading.Thread(target=_send, daemon=True).start()
 def _card(title, body):
     return f"""<div style="font-family:Arial,sans-serif;max-width:580px;margin:30px auto;background:#0f1b2d;
 color:#dde8f5;border-radius:10px;border:1px solid rgba(0,210,255,0.2);overflow:hidden">
@@ -212,6 +212,15 @@ def notify_password_reset(email, token):
 def notify_appointment(name, email, date, time, service):
     body = f"<p style='color:#8ab0d0'>Hi <strong style='color:#fff'>{name}</strong>,<br><br>Appointment request received. We'll confirm within 2 hours.</p><div style='background:#0a1828;border:1px solid rgba(0,212,255,0.15);border-radius:6px;padding:16px;margin-top:12px'><p style='color:#dde8f5;margin:0 0 6px'>Date: <strong>{date}</strong></p><p style='color:#dde8f5;margin:0 0 6px'>Time: <strong>{time} EAT</strong></p><p style='color:#dde8f5;margin:0'>Service: <strong>{service or 'General'}</strong></p></div>"
     send_email(email, "Appointment Request Received — Elite Consulting", _card("Appointment Received", body))
+
+def notify_new_user_credentials(name, email, password):
+    body = (
+        f"<p style='color:#8ab0d0'>Hi <strong style='color:#fff'>{name}</strong>,</p>"
+        f"<p style='color:#dde8f5'>Your account has been created by the admin. Use the temporary password below to sign in and update it:</p>"
+        f"<div style='padding:14px;background:#0a1828;border-left:3px solid #00d4ff;margin:8px 0'><strong style='color:#00d4ff'>{password}</strong></div>"
+        f"<p style='color:#dde8f5'>Please change your password on first login.</p>"
+    )
+    send_email(email, "Elite Consulting Account Created", _card("New Account Credentials", body))
 
 class ContactRequest(BaseModel):
     name: str; email: str; service: Optional[str] = ""; message: str
@@ -644,3 +653,27 @@ async def update_post(bid: int, req: BlogPostRequest, _=Depends(verify_admin)):
 @app.delete("/api/admin/blog/{bid}")
 async def delete_post(bid: int, _=Depends(verify_admin)):
     conn = get_conn(); conn.execute("DELETE FROM blog_posts WHERE id=?", (bid,)); conn.commit(); conn.close(); return {"message": "Deleted"}
+class CreateUserRequest(BaseModel):
+    name: str
+    email: str
+    temporary_password: Optional[str] = None  # auto-generated if omitted
+
+@app.post("/api/admin/users")
+async def admin_create_user(req: CreateUserRequest, _=Depends(verify_admin)):
+    temp_pw = req.temporary_password or secrets.token_urlsafe(10)
+    pw_hash = bcrypt.hashpw(temp_pw.encode(), bcrypt.gensalt()).decode()
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+            (req.name, req.email, pw_hash)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    finally:
+        conn.close()
+    # Send welcome email with credentials
+    notify_new_user_credentials(req.name, req.email, temp_pw)
+    log_activity(None, "admin_create_user", req.email)
+    return {"status": "success", "message": f"User created. Credentials emailed to {req.email}."}
