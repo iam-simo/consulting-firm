@@ -162,7 +162,9 @@ def send_email(to, subject, html):
             msg["From"]    = f"Elite Consulting <{SMTP_USER}>"
             msg["To"]      = to
             msg.attach(MIMEText(html, "html"))
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.ehlo()
+                server.starttls()
                 server.login(SMTP_USER, SMTP_PASS)
                 server.sendmail(SMTP_USER, to, msg.as_string())
                 print(f"[EMAIL] OK → {to}")
